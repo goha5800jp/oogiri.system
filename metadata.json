@@ -1,0 +1,8 @@
+{
+  "name": "フリップ大喜利 モニター＆コンソールシステム",
+  "description": "PCを使用し、プロジェクターや外部モニターを使用できる大喜利会でのシステム。お題や参加者の表示・管理などをスムーズに行えます。",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "Session": {
+      "title": "Session",
+      "description": "App session holding current game state and voting status",
+      "type": "object",
+      "properties": {
+        "isVotingOpen": {
+          "type": "boolean",
+          "description": "Whether audience voting is open"
+        },
+        "maxVotesPerPerson": {
+          "type": "number",
+          "description": "Max votes allowed per voter"
+        },
+        "allowMultipleVotesPerParticipant": {
+          "type": "boolean",
+          "description": "Whether a voter can vote multiple times for the same participant"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["isVotingOpen", "updatedAt"]
+    },
+    "Voter": {
+      "title": "Voter",
+      "description": "Registered audience voter",
+      "type": "object",
+      "properties": {
+        "nickname": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Display nickname of the voter"
+        },
+        "joinedAt": {
+          "type": "string",
+          "description": "Join timestamp"
+        },
+        "isReady": {
+          "type": "boolean",
+          "description": "Readiness flag"
+        }
+      },
+      "required": ["nickname", "joinedAt"]
+    },
+    "Vote": {
+      "title": "Vote",
+      "description": "Audience vote record",
+      "type": "object",
+      "properties": {
+        "voterId": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Identifier of the voter"
+        },
+        "nickname": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Voter nickname"
+        },
+        "participantId": {
+          "type": "number",
+          "description": "Target participant ID"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["voterId", "participantId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/sessions/{sessionId}": {
+      "schema": {
+        "$ref": "#/entities/Session"
+      },
+      "description": "Top-level session state"
+    },
+    "/sessions/{sessionId}/voters/{voterId}": {
+      "schema": {
+        "$ref": "#/entities/Voter"
+      },
+      "description": "Audience members in the session"
+    },
+    "/sessions/{sessionId}/votes/{voteId}": {
+      "schema": {
+        "$ref": "#/entities/Vote"
+      },
+      "description": "Votes cast in the session"
+    }
+  }
+}

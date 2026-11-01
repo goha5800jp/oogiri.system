@@ -79,6 +79,20 @@ export const AudienceVoteView: React.FC = () => {
     const unsubscribe = subscribeToVotingSession((data) => {
       setSession(data);
       setLoading(false);
+
+      if (data?.roundId) {
+        try {
+          const storedVotedRound = localStorage.getItem(VOTER_HAS_VOTED_KEY);
+          // If stored value is from an older round, reset hasVoted so user can vote in the new round!
+          if (storedVotedRound && storedVotedRound !== data.roundId) {
+            setHasVoted(false);
+            setAllocatedVotes({});
+            setSubmittedVotedParticipants([]);
+          } else if (storedVotedRound === data.roundId) {
+            setHasVoted(true);
+          }
+        } catch {}
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -110,6 +124,9 @@ export const AudienceVoteView: React.FC = () => {
   // Vote calculation helpers
   const maxVotes = session?.maxVotesPerPerson || 1;
   const allowMultiple = !!session?.allowMultipleVotesPerParticipant;
+  const maxDuplicate = allowMultiple
+    ? Math.min(session?.maxDuplicateVotesPerParticipant || maxVotes, maxVotes)
+    : 1;
   const totalAllocated = Object.values(allocatedVotes).reduce((sum, n) => sum + n, 0);
   const remainingVotes = Math.max(0, maxVotes - totalAllocated);
 
@@ -119,6 +136,9 @@ export const AudienceVoteView: React.FC = () => {
       const next = Math.max(0, current + delta);
 
       if (!allowMultiple && next > 1) {
+        return prev;
+      }
+      if (allowMultiple && next > maxDuplicate) {
         return prev;
       }
 
@@ -211,7 +231,7 @@ export const AudienceVoteView: React.FC = () => {
       await submitVotes(voterId, nickname, allocatedVotes);
       setHasVoted(true);
       try {
-        localStorage.setItem(VOTER_HAS_VOTED_KEY, 'true');
+        localStorage.setItem(VOTER_HAS_VOTED_KEY, session?.roundId || 'round_voted');
       } catch {}
 
       // Store summary
@@ -242,9 +262,10 @@ export const AudienceVoteView: React.FC = () => {
               <h1 className="text-base font-black text-neutral-950 leading-tight">
                 生大喜利 観覧者投票
               </h1>
-              <p className="text-[11px] text-neutral-600 font-bold">
-                あなたの1票で面白かった回答者を称えよう！
-              </p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[10px] text-emerald-700 font-extrabold">リアルタイム同期中</span>
+              </div>
             </div>
           </div>
           <a
@@ -433,7 +454,7 @@ export const AudienceVoteView: React.FC = () => {
 
             {allowMultiple && (
               <p className="text-[11px] text-neutral-600 font-bold bg-amber-50 p-2 rounded-lg border border-amber-200">
-                💡 同じ回答者に複数票を投票することも可能です（最大 {maxVotes} 票まで自由に配分できます）。
+                💡 同じ回答者に複数票を投票することも可能です（1人あたり最大 {maxDuplicate} 票、合計 {maxVotes} 票まで）。
               </p>
             )}
 
@@ -499,7 +520,7 @@ export const AudienceVoteView: React.FC = () => {
                           </span>
                           <button
                             type="button"
-                            disabled={remainingVotes <= 0}
+                            disabled={remainingVotes <= 0 || voteCount >= maxDuplicate}
                             onClick={() => handleVoteChange(p.id, 1)}
                             className="w-8 h-8 rounded-lg border-2 border-neutral-950 bg-amber-300 hover:bg-amber-400 disabled:opacity-30 disabled:hover:bg-amber-300 flex items-center justify-center cursor-pointer font-black"
                           >

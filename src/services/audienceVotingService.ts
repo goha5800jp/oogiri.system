@@ -13,8 +13,10 @@ import { AudienceVoter } from '../types/ogiri';
 export interface VotingSessionData {
   isQrVisible: boolean;
   isVotingActive: boolean;
+  isGayaModeActive?: boolean;
   maxVotesPerPerson: number;
   allowMultipleVotesPerParticipant: boolean;
+  maxDuplicateVotesPerParticipant?: number;
   topicText?: string;
   activeParticipants: Array<{
     id: number;
@@ -22,6 +24,7 @@ export interface VotingSessionData {
     teamName?: string;
     avatarUrl?: string;
   }>;
+  roundId?: string;
   updatedAt: string;
 }
 
@@ -48,8 +51,9 @@ export async function updateVotingSession(
   };
 
   try {
+    const sanitized = JSON.parse(JSON.stringify(payload));
     const sessionDocRef = doc(db, 'sessions', sessionId);
-    await setDoc(sessionDocRef, payload, { merge: true });
+    await setDoc(sessionDocRef, sanitized, { merge: true });
   } catch (err) {
     console.warn('Firestore updateVotingSession fallback:', err);
   }
@@ -291,6 +295,7 @@ export async function resetVotingData(sessionId = 'current'): Promise<void> {
       sessionDocRef,
       {
         isVotingActive: false,
+        roundId: 'round_' + Date.now(),
         updatedAt: new Date().toISOString(),
       },
       { merge: true }

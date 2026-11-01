@@ -354,25 +354,17 @@ export const RecordsDatabaseView: React.FC<RecordsDatabaseViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3.5 sm:space-y-4">
       {/* Top Header Card */}
       <div
-        className={`rounded-xl border-2 p-4 sm:p-5 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
+        className={`rounded-xl border-2 p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
           theme.isDark
             ? 'bg-indigo-950/40 border-indigo-800'
             : 'bg-indigo-50 border-indigo-300'
         }`}
       >
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs bg-indigo-600 text-white px-2 py-0.5 rounded font-black">
-              記録２
-            </span>
-            <span className="text-xs bg-indigo-200 dark:bg-indigo-900/60 text-indigo-900 dark:text-indigo-200 px-2 py-0.5 rounded font-black border border-indigo-400 dark:border-indigo-700">
-              P.00 データベース
-            </span>
-          </div>
-          <h2 className={`text-lg sm:text-xl font-black mt-1 flex items-center gap-2 ${theme.textColorClass}`}>
+          <h2 className={`text-base sm:text-lg font-black flex items-center gap-2 ${theme.textColorClass}`}>
             <Database className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             <span>【データベース】総合記録・戦績集計</span>
           </h2>
@@ -466,10 +458,7 @@ export const RecordsDatabaseView: React.FC<RecordsDatabaseViewProps> = ({
       >
         <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b-2 pb-2.5 ${theme.borderClass}`}>
           <div>
-            <span className="text-xs bg-sky-100 text-sky-900 border border-sky-400 px-2 py-0.5 rounded font-black">
-              参加実績
-            </span>
-            <h3 className={`text-base sm:text-lg font-black mt-1 flex items-center gap-2 ${theme.textColorClass}`}>
+            <h3 className={`text-base sm:text-lg font-black flex items-center gap-2 ${theme.textColorClass}`}>
               <Users className="w-5 h-5 text-sky-600" />
               <span>【出場回数】参加者の出場頻度一覧</span>
             </h3>
@@ -972,7 +961,7 @@ export const RecordsDatabaseView: React.FC<RecordsDatabaseViewProps> = ({
           onClick={onNavigateToLogs}
           className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-3 rounded-xl font-black text-sm cursor-pointer shadow-lg border-2 border-emerald-900 transition hover:scale-102"
         >
-          <span>記録１：試合ログ へ進む</span>
+          <span>記録１ ログ管理 へ進む</span>
           <ChevronRight className="w-5 h-5" />
         </button>
         <button

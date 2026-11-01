@@ -12,8 +12,10 @@ import {
   TOPIC_FONT_OPTIONS,
 } from '../utils/ogiriLogic';
 import { ZoomControl } from './ZoomControl';
-import { Maximize2, Minimize2, Settings, User, BookmarkPlus, CheckCircle2, Trophy, Vote, QrCode as QrIcon } from 'lucide-react';
+import { Maximize2, Minimize2, Settings, User, BookmarkPlus, CheckCircle2, Trophy, Vote, QrCode as QrIcon, MessageSquare } from 'lucide-react';
 import QRCode from 'qrcode';
+import { BackgroundPatternLayer } from './BackgroundPatternLayer';
+import { GayaBarrageOverlay } from './GayaBarrageOverlay';
 
 interface MonitorViewProps {
   state: OgiriState;
@@ -73,6 +75,26 @@ export const MonitorView: React.FC<MonitorViewProps> = ({
       .then((url) => setQrCodeDataUrl(url))
       .catch((err) => console.warn('QR code generation failed:', err));
   }, [state.audienceVoting?.isQrVisible]);
+
+  // Generate QR code for mobile Gaya mode
+  const [gayaQrDataUrl, setGayaQrDataUrl] = useState<string>('');
+  useEffect(() => {
+    if (!state.isGayaModeEnabled) {
+      setGayaQrDataUrl('');
+      return;
+    }
+    const gayaUrl = `${window.location.origin}${window.location.pathname}?mode=gaya`;
+    QRCode.toDataURL(gayaUrl, {
+      width: 440,
+      margin: 1.5,
+      color: {
+        dark: '#0a0a0a',
+        light: '#ffffff',
+      },
+    })
+      .then((url) => setGayaQrDataUrl(url))
+      .catch((err) => console.warn('Gaya QR code generation failed:', err));
+  }, [state.isGayaModeEnabled]);
 
   // Monitor fullscreen change events
   useEffect(() => {
@@ -487,7 +509,7 @@ export const MonitorView: React.FC<MonitorViewProps> = ({
               </>
             )}
           </div>
-        ) : (state.audienceVoting?.isVotingActive || Object.keys(state.audienceVotes || {}).length > 0) ? (
+        ) : (state.isImpressionModeEnabled || state.audienceVoting?.isVotingActive || Object.keys(state.audienceVotes || {}).length > 0) ? (
           <div className="flex items-baseline justify-center relative min-h-[30px] sm:min-h-[40px]">
             {ceremonyActive && !isRevealed ? (
               <div className="h-6 sm:h-10" />
@@ -533,6 +555,46 @@ export const MonitorView: React.FC<MonitorViewProps> = ({
       style={{ zoom, backgroundColor: theme.bgHex }}
       className={`relative w-screen h-screen min-h-screen ${theme.textColorClass} font-bold overflow-hidden flex flex-col justify-between p-3 sm:p-5 lg:p-6 select-none transition-colors duration-200`}
     >
+      {/* Custom Background Image Layer */}
+      {state.customBgUrl && (
+        <div
+          className="absolute inset-0 pointer-events-none overflow-hidden z-[5]"
+          style={{
+            opacity: (state.bgOpacity ?? 100) / 100,
+            filter: `brightness(${state.bgBrightness ?? 100}%)`,
+          }}
+        >
+          <div
+            className="w-full h-full bg-center bg-cover bg-no-repeat transition-transform duration-150"
+            style={{
+              backgroundImage: `url(${state.customBgUrl})`,
+              transform: `scale(${(state.bgScale ?? 100) / 100})`,
+              transformOrigin: 'center center',
+            }}
+          />
+        </div>
+      )}
+
+      {/* Background Pattern Layer (格子 / ドット) */}
+      {state.bgPattern && state.bgPattern !== 'none' && (
+        <BackgroundPatternLayer
+          pattern={state.bgPattern}
+          scale={state.bgPatternScale ?? 100}
+          speed={state.bgPatternSpeed ?? 100}
+          opacity={state.bgPatternOpacity ?? 60}
+          count={state.bgPatternCount ?? 100}
+          palette={state.colorPalette || 'yellow'}
+          isDark={theme.isDark}
+        />
+      )}
+
+      {/* Gaya Mode Barrage & Reaction Overlay (ニコニコ風弾幕・リアクション) */}
+      <GayaBarrageOverlay
+        isGayaModeEnabled={state.isGayaModeEnabled}
+        colorPalette={state.colorPalette}
+        isDark={theme.isDark}
+      />
+
       {/* Toast notification on saving match log */}
       {showSaveLogToast && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-emerald-700 text-white px-5 py-2.5 rounded-full shadow-2xl border-2 border-white text-sm font-black flex items-center gap-2 animate-bounce">
@@ -602,37 +664,62 @@ export const MonitorView: React.FC<MonitorViewProps> = ({
           </div>
         )}
 
-        {/* Top Right Timer (Only when isEnabled is ON) */}
-        {timer && timer.isEnabled && (
-          <div className="flex flex-col items-end">
-            <div
-              className={`px-4 py-1.5 sm:px-6 sm:py-2.5 rounded-2xl border-4 font-mono font-black text-2xl sm:text-4xl lg:text-5xl tracking-wider shadow-xl transition-all duration-300 ${
-                isTimeUp
-                  ? 'bg-red-600 text-white border-neutral-950 animate-pulse'
-                  : isAlertState
-                  ? theme.isDark
-                    ? 'bg-neutral-900 text-red-500 border-red-500 ring-4 ring-red-400/50 animate-pulse'
-                    : 'bg-white text-red-600 border-red-600 ring-4 ring-red-400/50 animate-pulse'
-                  : theme.isDark
-                  ? 'bg-neutral-900 text-white border-neutral-600'
-                  : 'bg-white text-neutral-950 border-neutral-950'
-              }`}
-            >
-              {formatTimeMMSS(timer.remainingSeconds)}
+        {/* Top Right: Timer & Gaya QR Area */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          {/* Gaya Mode Audience Participation QR Code (タイマーの左横: 二まわり大きなQRコード) */}
+          {state.isGayaModeEnabled && gayaQrDataUrl && (
+            <div className="flex items-center gap-2.5 sm:gap-3 bg-white/95 text-neutral-950 p-2 sm:p-2.5 rounded-2xl border-2 sm:border-3 border-neutral-950 shadow-xl animate-in fade-in duration-200">
+              <img
+                src={gayaQrDataUrl}
+                alt="ガヤ参加用QRコード"
+                className="w-20 h-20 sm:w-24 sm:h-24 lg:w-28 lg:h-28 rounded-xl object-contain border-2 border-neutral-900 bg-white p-0.5 shadow-sm"
+              />
+              <div className="flex flex-col justify-center pr-1 text-left">
+                <span className="text-[10px] sm:text-xs font-black bg-rose-600 text-white px-2 py-0.5 rounded-full inline-block text-center mb-1 shadow-xs tracking-tight">
+                  ガヤ受付中
+                </span>
+                <span className="text-xs sm:text-sm lg:text-base font-black tracking-tight text-neutral-950 leading-tight">
+                  スマホで参加
+                </span>
+                <span className="text-[9px] sm:text-[10px] font-bold text-neutral-600 hidden sm:inline mt-0.5">
+                  歓声・コメント
+                </span>
+              </div>
             </div>
-            {isTimeUp && (
-              <span className="text-[11px] sm:text-xs font-black text-red-700 bg-red-100 border border-red-600 px-2 py-0.5 rounded mt-0.5 shadow-xs">
-                TIME UP!
-              </span>
-            )}
-          </div>
-        )}
+          )}
+
+          {/* Top Right Timer (Only when isEnabled is ON) */}
+          {timer && timer.isEnabled && (
+            <div className="flex flex-col items-end">
+              <div
+                className={`px-4 py-1.5 sm:px-6 sm:py-2.5 rounded-2xl border-4 font-mono font-black text-2xl sm:text-4xl lg:text-5xl tracking-wider shadow-xl transition-all duration-300 ${
+                  isTimeUp
+                    ? 'bg-red-600 text-white border-neutral-950 animate-pulse'
+                    : isAlertState
+                    ? theme.isDark
+                      ? 'bg-neutral-900 text-red-500 border-red-500 ring-4 ring-red-400/50 animate-pulse'
+                      : 'bg-white text-red-600 border-red-600 ring-4 ring-red-400/50 animate-pulse'
+                    : theme.isDark
+                    ? 'bg-neutral-900 text-white border-neutral-600'
+                    : 'bg-white text-neutral-950 border-neutral-950'
+                }`}
+              >
+                {formatTimeMMSS(timer.remainingSeconds)}
+              </div>
+              {isTimeUp && (
+                <span className="text-[11px] sm:text-xs font-black text-red-700 bg-red-100 border border-red-600 px-2 py-0.5 rounded mt-0.5 shadow-xs">
+                  TIME UP!
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ======================================================== */}
       {/* UPPER ~ MIDDLE SECTION: トピックまたは観覧者投票QRコード表示 */}
       {/* ======================================================== */}
-      <section className="flex-1 min-h-0 flex flex-col items-center justify-center text-center px-2 sm:px-6 py-1 my-auto overflow-hidden">
+      <section className="relative flex-1 min-h-0 flex flex-col items-center justify-center text-center px-2 sm:px-6 py-1 my-auto overflow-hidden z-30">
         {state.audienceVoting?.isQrVisible && !ceremonyActive ? (
           /* ======================================================== */
           /* 観覧者スマートフォン投票 QRコード表示モード */
@@ -658,7 +745,14 @@ export const MonitorView: React.FC<MonitorViewProps> = ({
                     className="w-8 h-8 rounded border border-neutral-950 object-cover flex-shrink-0"
                   />
                 )}
-                <span className="text-sm sm:text-base font-black truncate max-w-xl text-left">
+                <span
+                  className="text-sm sm:text-base font-black truncate max-w-xl text-left"
+                  style={{
+                    fontFamily: currentFontFamily,
+                    WebkitTextStroke: state.isTopicOutline ? `1.5px ${theme.isDark ? '#000000' : '#ffffff'}` : undefined,
+                    paintOrder: state.isTopicOutline ? 'stroke fill' : undefined,
+                  }}
+                >
                   {rawTopicText.replace(/\(k\)/g, ' ')}
                 </span>
               </div>
@@ -762,34 +856,46 @@ export const MonitorView: React.FC<MonitorViewProps> = ({
             )}
 
             {/* Topic Text: beneath image if photo topic, or primary if text topic */}
-            {hasText && (
-              <div
-                id="monitor-topic-container"
-                className={`tracking-tight transition-all duration-200 max-w-full break-words whitespace-pre-wrap flex-shrink-0 ${
-                  isBold ? 'font-black' : 'font-normal'
-                } ${
-                  theme.textColorClass
-                } ${
-                  hasImage
-                    ? `${photoFontSizeClass} ${photoLineHeightClass} mt-1 sm:mt-2`
-                    : `${fontSizeClass} ${lineHeightClass}`
-                }`}
-                style={{
-                  fontFamily: currentFontFamily,
-                  textShadow: theme.isDark
-                    ? '0 2px 4px rgba(0,0,0,0.8)'
-                    : '0 1px 2px rgba(0,0,0,0.05)',
-                  wordBreak: 'break-word',
-                }}
-              >
-                {lines.map((line, idx) => (
-                  <React.Fragment key={idx}>
-                    <span className="inline-block">{line}</span>
-                    {idx < lines.length - 1 && <br />}
-                  </React.Fragment>
-                ))}
-              </div>
-            )}
+            {hasText && (() => {
+              const isOutline = !!state.isTopicOutline;
+              const strokeColor = theme.isDark ? '#000000' : '#ffffff';
+              const textShadowStyle = isOutline
+                ? theme.isDark
+                  ? '3px 3px 0 #000, -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 0 3px 0 #000, 0 -3px 0 #000, 3px 0 0 #000, -3px 0 0 #000, 0 4px 8px rgba(0,0,0,0.9)'
+                  : '3px 3px 0 #fff, -3px -3px 0 #fff, 3px -3px 0 #fff, -3px 3px 0 #fff, 0 3px 0 #fff, 0 -3px 0 #fff, 3px 0 0 #fff, -3px 0 0 #fff, 0 2px 6px rgba(0,0,0,0.25)'
+                : theme.isDark
+                ? '0 2px 4px rgba(0,0,0,0.8)'
+                : '0 1px 2px rgba(0,0,0,0.05)';
+
+              return (
+                <div
+                  id="monitor-topic-container"
+                  className={`tracking-tight transition-all duration-200 max-w-full break-words whitespace-pre-wrap flex-shrink-0 ${
+                    isBold ? 'font-black' : 'font-normal'
+                  } ${
+                    theme.textColorClass
+                  } ${
+                    hasImage
+                      ? `${photoFontSizeClass} ${photoLineHeightClass} mt-1 sm:mt-2`
+                      : `${fontSizeClass} ${lineHeightClass}`
+                  }`}
+                  style={{
+                    fontFamily: currentFontFamily,
+                    WebkitTextStroke: isOutline ? `3px ${strokeColor}` : undefined,
+                    paintOrder: isOutline ? 'stroke fill' : undefined,
+                    textShadow: textShadowStyle,
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {lines.map((line, idx) => (
+                    <React.Fragment key={idx}>
+                      <span className="inline-block">{line}</span>
+                      {idx < lines.length - 1 && <br />}
+                    </React.Fragment>
+                  ))}
+                </div>
+              );
+            })()}
 
             {/* Empty state: neither image nor text */}
             {!hasImage && !hasText && (
@@ -837,7 +943,7 @@ export const MonitorView: React.FC<MonitorViewProps> = ({
       {/* ======================================================== */}
       {(state.isParticipantsVisible || ceremonyActive) && (
         <section
-          className={`w-full max-w-7xl mx-auto pt-8 sm:pt-10 pb-2 border-t-4 flex-shrink-0 z-30 overflow-visible ${theme.dividerClass}`}
+          className={`relative w-full max-w-7xl mx-auto pt-8 sm:pt-10 pb-2 border-t-4 flex-shrink-0 z-30 overflow-visible ${theme.dividerClass}`}
         >
           {orderedParticipants.length === 0 ? (
             <div

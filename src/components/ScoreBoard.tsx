@@ -22,6 +22,8 @@ import {
   ChevronRight,
 } from 'lucide-react';
 
+import { GayaModerationPanel } from './GayaModerationPanel';
+
 interface ScoreBoardProps {
   participants: Participant[];
   scoreButtons: string[];
@@ -37,6 +39,10 @@ interface ScoreBoardProps {
   onToggleAnsweringParticipant?: (id: number) => void;
   isScoringModeEnabled?: boolean;
   onToggleScoringMode?: (enabled: boolean) => void;
+  isImpressionModeEnabled?: boolean;
+  onToggleImpressionMode?: (enabled: boolean) => void;
+  isGayaModeEnabled?: boolean;
+  onToggleGayaMode?: (enabled: boolean) => void;
   answerLogs?: AnswerLogEntry[];
   onUpdateAnswerLogs?: (logs: AnswerLogEntry[]) => void;
   onRequestConfirmResetLogs?: () => void;
@@ -45,6 +51,10 @@ interface ScoreBoardProps {
   onToggleResultAnnouncement?: () => void;
   onReorderParticipants?: (newOrderIds: number[]) => void;
   audienceVotes?: Record<number, number>;
+  isVotingFeatureEnabled?: boolean;
+  onToggleVotingFeature?: (enabled: boolean) => void;
+  onUpdateAudienceVote?: (participantId: number, count: number) => void;
+  showToast?: (message: string) => void;
 }
 
 export const ScoreBoard: React.FC<ScoreBoardProps> = ({
@@ -62,6 +72,10 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
   onToggleAnsweringParticipant,
   isScoringModeEnabled = true,
   onToggleScoringMode,
+  isImpressionModeEnabled = false,
+  onToggleImpressionMode,
+  isGayaModeEnabled = false,
+  onToggleGayaMode,
   answerLogs = [],
   onUpdateAnswerLogs,
   onRequestConfirmResetLogs,
@@ -70,8 +84,76 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
   onToggleResultAnnouncement,
   onReorderParticipants,
   audienceVotes = {},
+  isVotingFeatureEnabled = true,
+  onToggleVotingFeature,
+  onUpdateAudienceVote,
+  showToast,
 }) => {
   const paletteTheme = getPaletteTheme(colorPalette);
+
+  // Local input values for manual audience vote counter box (participantId -> string)
+  const [editingVoteInputs, setEditingVoteInputs] = useState<Record<number, string>>({});
+  const [voteInputErrors, setVoteInputErrors] = useState<Record<number, boolean>>({});
+
+  const handleVoteInputChange = (pId: number, val: string) => {
+    setEditingVoteInputs((prev) => ({ ...prev, [pId]: val }));
+    if (voteInputErrors[pId]) {
+      setVoteInputErrors((prev) => ({ ...prev, [pId]: false }));
+    }
+  };
+
+  const handleVoteInputCommit = (pId: number) => {
+    const rawVal = editingVoteInputs[pId];
+    if (rawVal === undefined) return;
+    const trimmed = rawVal.trim();
+    const num = Number(trimmed);
+
+    // 1以上の整数以外が入力された場合はエラーを返す
+    if (trimmed === '' || !/^\d+$/.test(trimmed) || !Number.isInteger(num) || num < 1) {
+      setVoteInputErrors((prev) => ({ ...prev, [pId]: true }));
+      showToast?.('1以上の整数を入力してください');
+      // 有効な現在の得票数表示に戻す
+      setEditingVoteInputs((prev) => {
+        const next = { ...prev };
+        delete next[pId];
+        return next;
+      });
+      return;
+    }
+
+    setVoteInputErrors((prev) => ({ ...prev, [pId]: false }));
+    onUpdateAudienceVote?.(pId, num);
+    setEditingVoteInputs((prev) => {
+      const next = { ...prev };
+      delete next[pId];
+      return next;
+    });
+  };
+
+  const handleManualVoteIncrement = (pId: number) => {
+    const current = audienceVotes[pId] || 0;
+    const next = current < 1 ? 1 : current + 1;
+    onUpdateAudienceVote?.(pId, next);
+    setVoteInputErrors((prev) => ({ ...prev, [pId]: false }));
+    setEditingVoteInputs((prev) => {
+      const nextMap = { ...prev };
+      delete nextMap[pId];
+      return nextMap;
+    });
+  };
+
+  const handleManualVoteDecrement = (pId: number) => {
+    const current = audienceVotes[pId] || 0;
+    if (current <= 0) return;
+    const next = current - 1;
+    onUpdateAudienceVote?.(pId, next);
+    setVoteInputErrors((prev) => ({ ...prev, [pId]: false }));
+    setEditingVoteInputs((prev) => {
+      const nextMap = { ...prev };
+      delete nextMap[pId];
+      return nextMap;
+    });
+  };
 
   // Collapsed answer log IDs
   const [collapsedAnswerLogIds, setCollapsedAnswerLogIds] = useState<Set<number>>(new Set());
@@ -268,16 +350,13 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
   if (participants.length === 0 && mode !== 'config_only') {
     if (mode === 'scores_only') {
       return (
-        <div className="bg-[#FFFDE7] p-4 sm:p-5 rounded-lg border-2 border-neutral-950 shadow-sm">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-black bg-amber-300 text-neutral-950 px-2 py-0.5 rounded border border-neutral-900">
-              リアルタイム操作
-            </span>
+        <div className="bg-[#FFFDE7] p-3 sm:p-3.5 rounded-lg border-2 border-neutral-950 shadow-xs">
+          <div className="flex items-center gap-2 mb-1.5">
             <h3 className="text-base sm:text-lg font-black text-neutral-950">
               コントロールパネル
             </h3>
           </div>
-          <div className="p-4 bg-white rounded-lg border border-neutral-400 text-xs sm:text-sm text-neutral-700 font-bold">
+          <div className="p-3 bg-white rounded-lg border border-neutral-400 text-xs text-neutral-700 font-bold">
             ※ 参加中の参加者がいません。直上の「参加状況設定」またはサブコンソール１で名前を入力し、参加スイッチをONにしてください。
           </div>
         </div>
@@ -290,24 +369,21 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
     <div
       className={
         mode === 'scores_only'
-          ? 'bg-[#FFFDE7] p-4 sm:p-5 rounded-lg border-2 border-neutral-950 shadow-sm space-y-4'
-          : 'space-y-5'
+          ? 'bg-[#FFFDE7] p-3 sm:p-3.5 rounded-lg border-2 border-neutral-950 shadow-xs space-y-3'
+          : 'space-y-4'
       }
     >
       {/* Title */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div>
-          <span className="text-xs font-black bg-amber-300 text-neutral-950 px-2 py-0.5 rounded border border-neutral-900">
-            リアルタイム操作
-          </span>
-          <h3 className="text-base sm:text-lg font-black text-neutral-950 mt-1">
+          <h3 className="text-base sm:text-lg font-black text-neutral-950">
             コントロールパネル
           </h3>
           <p className="text-xs text-neutral-700 font-bold">
             モニター表示順に各回答者を管理します。「回答中」を押すとモニター側で対象回答者が強調されます。
           </p>
           {isScoringModeEnabled && isScoreHiddenOnMonitor && (
-            <div className="inline-flex items-center gap-1.5 mt-1 text-xs bg-purple-100 text-purple-950 border border-purple-600 px-2.5 py-0.5 rounded-full font-black animate-pulse">
+            <div className="inline-flex items-center gap-1.5 mt-1 text-xs bg-purple-100 text-purple-950 border border-purple-600 px-2 py-0.5 rounded-full font-black animate-pulse">
               <EyeOff className="w-3.5 h-3.5 text-purple-700" />
               <span>モニター画面では得点が「???」と隠されています</span>
             </div>
@@ -315,60 +391,138 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
         </div>
 
         {/* Buttons / Switches */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Switch: 加点モード (ON/OFF) - デフォルトON */}
-          {onToggleScoringMode && (
-            <div className="bg-white px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-sm flex items-center">
-              <Switch
-                checked={isScoringModeEnabled !== false}
-                onChange={onToggleScoringMode}
-                onLabel="ON"
-                offLabel="OFF"
-                label="加点モード:"
-              />
+        <div className="flex flex-col gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Switch: 印象モード (ON/OFF) - デフォルトOFF ＆ 直下に「投票機能」スイッチ */}
+            {onToggleImpressionMode && (
+              <div className="flex flex-col gap-1.5">
+                <div className="bg-white px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-sm flex items-center">
+                  <Switch
+                    checked={!!isImpressionModeEnabled}
+                    onChange={onToggleImpressionMode}
+                    onLabel="ON"
+                    offLabel="OFF"
+                    label="印象モード:"
+                  />
+                </div>
+
+                {/* 印象モードON時、そのスイッチの直下に表示される「投票機能」スイッチ（デフォルトON） */}
+                {isImpressionModeEnabled && onToggleVotingFeature && (
+                  <div className="bg-amber-50 px-3 py-1.5 rounded-lg border-2 border-amber-500 shadow-sm flex items-center">
+                    <Switch
+                      size="sm"
+                      checked={isVotingFeatureEnabled !== false}
+                      onChange={onToggleVotingFeature}
+                      onLabel="ON"
+                      offLabel="OFF"
+                      label="投票機能:"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Switch: 加点モード (ON/OFF) - デフォルトON */}
+            {onToggleScoringMode && (
+              <div className="bg-white px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-sm flex items-center">
+                <Switch
+                  checked={isScoringModeEnabled !== false}
+                  onChange={onToggleScoringMode}
+                  onLabel="ON"
+                  offLabel="OFF"
+                  label="加点モード:"
+                />
+              </div>
+            )}
+
+            {/* Switch: モニターで得点を隠す／表示する (加点モードON時のみ) */}
+            {isScoringModeEnabled !== false && onToggleScoreHiddenOnMonitor && (
+              <div className="bg-white px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-sm flex items-center">
+                <Switch
+                  checked={isScoreHiddenOnMonitor}
+                  onChange={onToggleScoreHiddenOnMonitor}
+                  onLabel="得点を隠す (???)"
+                  offLabel="表示する"
+                  label="モニター得点:"
+                />
+              </div>
+            )}
+
+            {/* 結果発表を行う button (加点モードON時) */}
+            {isScoringModeEnabled !== false && onToggleResultAnnouncement && (
+              <button
+                type="button"
+                onClick={onToggleResultAnnouncement}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border-2 border-neutral-950 shadow cursor-pointer font-black text-xs sm:text-sm transition flex-shrink-0 ${
+                  isResultAnnouncementActive
+                    ? 'bg-amber-400 hover:bg-amber-500 text-neutral-950 ring-2 ring-amber-400 animate-pulse'
+                    : 'bg-gradient-to-r from-amber-300 via-amber-200 to-yellow-200 hover:from-amber-400 hover:to-yellow-300 text-neutral-950 hover:shadow-md'
+                }`}
+                title="モニター画面でドラマチックな結果発表アニメーションを開始します"
+              >
+                <Trophy className="w-4 h-4 text-amber-800" />
+                <span>{isResultAnnouncementActive ? '結果発表中 (中止/リセット)' : '結果発表を行う'}</span>
+              </button>
+            )}
+
+            {/* 全得点をリセットする button (加点モードON時のみ) */}
+            {isScoringModeEnabled !== false && (
+              <button
+                type="button"
+                onClick={onResetAllScores}
+                className="inline-flex items-center gap-1.5 bg-white hover:bg-red-50 text-red-700 hover:text-red-800 px-3.5 py-2 rounded-lg border-2 border-neutral-950 shadow cursor-pointer font-black text-xs sm:text-sm transition flex-shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>全得点をリセットする</span>
+              </button>
+            )}
+          </div>
+
+          {/* 下段: Switch: ガヤモード (ON/OFF) - 印象モード・加点モードの下に配置 */}
+          {onToggleGayaMode && (
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-neutral-200">
+              <div
+                className={`px-3 py-1.5 rounded-lg border-2 shadow-sm flex items-center transition ${
+                  isGayaModeEnabled
+                    ? 'bg-rose-50 border-rose-600 ring-2 ring-rose-400'
+                    : 'bg-white border-neutral-950'
+                }`}
+                title={
+                  (isImpressionModeEnabled || isScoringModeEnabled !== false)
+                    ? '印象モードまたは加点モードがONの時はガヤモードをONにできません'
+                    : '観覧者がスマートフォンからコメント・リアクションを送信できるガヤ席を開放します'
+                }
+              >
+                <Switch
+                  checked={!!isGayaModeEnabled}
+                  onChange={(checked) => {
+                    if (checked && (isImpressionModeEnabled || isScoringModeEnabled !== false)) {
+                      showToast?.('印象モードまたは加点モードがONの時はガヤモードをONにできません');
+                      return;
+                    }
+                    onToggleGayaMode(checked);
+                  }}
+                  disabled={isImpressionModeEnabled || isScoringModeEnabled !== false}
+                  onLabel="ON"
+                  offLabel="OFF"
+                  label="ガヤモード:"
+                />
+              </div>
+
+              {(isImpressionModeEnabled || isScoringModeEnabled !== false) ? (
+                <span className="text-[11px] text-neutral-500 font-bold">
+                  ※ 印象モードまたは加点モードがONの時はガヤモードをONにできません
+                </span>
+              ) : isGayaModeEnabled ? (
+                <span className="text-[11px] font-black text-rose-700 bg-rose-100 border border-rose-400 px-2.5 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                  <span>📢 モニターのタイマー横にQRコードを表示中（ガヤ受付中）</span>
+                </span>
+              ) : (
+                <span className="text-[11px] text-neutral-500 font-bold">
+                  ※ ONにするとモニターのタイマー横にQRコードが出現し、観覧者コメント（ガヤ）を受け付けます
+                </span>
+              )}
             </div>
-          )}
-
-          {/* Switch: モニターで得点を隠す／表示する (加点モードON時のみ) */}
-          {isScoringModeEnabled !== false && onToggleScoreHiddenOnMonitor && (
-            <div className="bg-white px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-sm flex items-center">
-              <Switch
-                checked={isScoreHiddenOnMonitor}
-                onChange={onToggleScoreHiddenOnMonitor}
-                onLabel="得点を隠す (???)"
-                offLabel="表示する"
-                label="モニター得点:"
-              />
-            </div>
-          )}
-
-          {/* 結果発表を行う button (加点モードON時) */}
-          {isScoringModeEnabled !== false && onToggleResultAnnouncement && (
-            <button
-              type="button"
-              onClick={onToggleResultAnnouncement}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border-2 border-neutral-950 shadow cursor-pointer font-black text-xs sm:text-sm transition flex-shrink-0 ${
-                isResultAnnouncementActive
-                  ? 'bg-amber-400 hover:bg-amber-500 text-neutral-950 ring-2 ring-amber-400 animate-pulse'
-                  : 'bg-gradient-to-r from-amber-300 via-amber-200 to-yellow-200 hover:from-amber-400 hover:to-yellow-300 text-neutral-950 hover:shadow-md'
-              }`}
-              title="モニター画面でドラマチックな結果発表アニメーションを開始します"
-            >
-              <Trophy className="w-4 h-4 text-amber-800" />
-              <span>{isResultAnnouncementActive ? '結果発表中 (中止/リセット)' : '結果発表を行う'}</span>
-            </button>
-          )}
-
-          {/* 全得点をリセットする button (加点モードON時のみ) */}
-          {isScoringModeEnabled !== false && (
-            <button
-              type="button"
-              onClick={onResetAllScores}
-              className="inline-flex items-center gap-1.5 bg-white hover:bg-red-50 text-red-700 hover:text-red-800 px-3.5 py-2 rounded-lg border-2 border-neutral-950 shadow cursor-pointer font-black text-xs sm:text-sm transition flex-shrink-0"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>全得点をリセットする</span>
-            </button>
           )}
         </div>
       </div>
@@ -493,7 +647,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
                 {p.name}
               </div>
 
-              {/* Current Score Display (加点モードON時) または 観覧者投票数 (加点モードOFF時) */}
+              {/* Current Score Display (加点モードON時) または 観覧者投票数 (印象モードON時のみ) */}
               {isScoringModeEnabled !== false ? (
                 <div className="w-full text-center py-1.5 px-2 bg-amber-100/80 rounded-lg border-2 border-neutral-900 mb-3 shadow-inner">
                   <span className="text-[10px] text-neutral-600 font-black block">
@@ -504,17 +658,73 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
                     <span className="text-xs ml-1 font-bold">点</span>
                   </span>
                 </div>
-              ) : (
-                <div className="w-full text-center py-1.5 px-2 bg-emerald-50 rounded-lg border-2 border-neutral-900 mb-3 shadow-inner">
-                  <span className="text-[10px] text-neutral-600 font-black block">
-                    観覧者投票数
-                  </span>
-                  <span className="text-xl sm:text-2xl font-black text-emerald-950">
-                    <span className="font-mono">{audienceVotes[p.id] || 0}</span>
-                    <span className="text-xs ml-1 font-bold text-neutral-700">票</span>
-                  </span>
-                </div>
-              )}
+              ) : isImpressionModeEnabled ? (
+                isVotingFeatureEnabled === false ? (
+                  /* 投票機能OFF時：カウンターボックス（手打ち入力 + カウンター操作） */
+                  <div className="w-full py-1.5 px-2 bg-emerald-50 rounded-lg border-2 border-neutral-900 mb-3 shadow-inner space-y-1">
+                    <span className="text-[10px] text-neutral-700 font-black block text-center">
+                      観覧者投票数
+                    </span>
+                    <div className="flex items-center justify-between gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleManualVoteDecrement(p.id)}
+                        disabled={(audienceVotes[p.id] || 0) <= 0}
+                        className="w-7 h-7 rounded border-2 border-neutral-900 bg-white hover:bg-neutral-100 active:bg-neutral-200 text-neutral-950 font-black text-sm flex items-center justify-center cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shadow-2xs transition"
+                        title="1票減らす"
+                      >
+                        -
+                      </button>
+
+                      <div className="flex-1 flex items-center justify-center gap-0.5">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={
+                            editingVoteInputs[p.id] !== undefined
+                              ? editingVoteInputs[p.id]
+                              : (audienceVotes[p.id] ?? 0)
+                          }
+                          onChange={(e) => handleVoteInputChange(p.id, e.target.value)}
+                          onBlur={() => handleVoteInputCommit(p.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleVoteInputCommit(p.id);
+                            }
+                          }}
+                          className={`w-14 text-center font-mono font-black text-base sm:text-lg bg-white rounded border-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-emerald-600 transition ${
+                            voteInputErrors[p.id]
+                              ? 'border-red-600 bg-red-50 text-red-950 ring-2 ring-red-400'
+                              : 'border-neutral-900 text-neutral-950'
+                          }`}
+                          aria-label={`${p.name}の観覧者投票数`}
+                        />
+                        <span className="text-xs font-bold text-neutral-700">票</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleManualVoteIncrement(p.id)}
+                        className="w-7 h-7 rounded border-2 border-neutral-900 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white font-black text-sm flex items-center justify-center cursor-pointer shadow-2xs transition"
+                        title="1票増やす"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* 投票機能ON時：スマホからの自動集計表示 */
+                  <div className="w-full text-center py-1.5 px-2 bg-emerald-50 rounded-lg border-2 border-neutral-900 mb-3 shadow-inner">
+                    <span className="text-[10px] text-neutral-600 font-black block">
+                      観覧者投票数
+                    </span>
+                    <span className="text-xl sm:text-2xl font-black text-emerald-950">
+                      <span className="font-mono">{audienceVotes[p.id] || 0}</span>
+                      <span className="text-xs ml-1 font-bold text-neutral-700">票</span>
+                    </span>
+                  </div>
+                )
+              ) : null}
 
               {/* Vertically aligned score buttons (加点モードON時のみ表示) */}
               {isScoringModeEnabled !== false && (
@@ -568,6 +778,40 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
           );
         })}
       </div>
+
+      {/* 印象モード かつ 投票機能OFF時：参加者の表示と回答ログの間に結果発表ボタンを表示 */}
+      {isImpressionModeEnabled && isVotingFeatureEnabled === false && onToggleResultAnnouncement && (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-xl bg-white border-2 border-neutral-950 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <Trophy className="w-5 h-5 text-amber-600 flex-shrink-0" />
+            <div>
+              <span className="text-xs sm:text-sm font-black text-neutral-950 block">
+                会場投票（挙手・アナログ集計）結果発表
+              </span>
+              <span className="text-[11px] text-neutral-600 font-bold block">
+                各回答者の投票数をもとに、モニター画面で結果発表（ドラムロール演出）を行います。
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onToggleResultAnnouncement}
+            className={`px-3 py-1.5 rounded-lg border-2 border-neutral-950 font-black text-xs transition cursor-pointer flex-shrink-0 ${
+              isResultAnnouncementActive
+                ? 'bg-amber-400 hover:bg-amber-500 text-neutral-950 ring-2 ring-amber-400 animate-pulse'
+                : 'bg-white hover:bg-neutral-100 text-neutral-900 shadow-xs'
+            }`}
+          >
+            {isResultAnnouncementActive ? '演出中 (リセット)' : '結果発表'}
+          </button>
+        </div>
+      )}
+
+      {/* ガヤ管理 (Gaya Moderation Panel): 参加者の表示と回答ログの間 */}
+      <GayaModerationPanel
+        isGayaModeEnabled={isGayaModeEnabled}
+        showToast={showToast}
+      />
 
       {/* ======================================================== */}
       {/* 回答ログ (Answer Logs): 1〜5+ テキストボックス & 回答者枠ドラッグ＆ドロップ */}

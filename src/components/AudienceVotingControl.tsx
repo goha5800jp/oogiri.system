@@ -33,6 +33,7 @@ interface AudienceVotingControlProps {
   isResultAnnouncementActive: boolean;
   onToggleResultAnnouncement: () => void;
   isScoringModeEnabled: boolean;
+  isImpressionModeEnabled?: boolean;
   onRequestOpenConfirm: (title: string, message: string, onConfirm: () => void) => void;
   showToast: (msg: string) => void;
 }
@@ -47,10 +48,46 @@ export const AudienceVotingControl: React.FC<AudienceVotingControlProps> = ({
   isResultAnnouncementActive,
   onToggleResultAnnouncement,
   isScoringModeEnabled,
+  isImpressionModeEnabled = false,
   onRequestOpenConfirm,
   showToast,
 }) => {
   const [isVoterListExpanded, setIsVoterListExpanded] = useState(false);
+  const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
+
+  // Accordion expansion is tied to 印象モード toggle, with manual toggle option
+  const isSectionExpanded = manualExpanded !== null ? manualExpanded : isImpressionModeEnabled;
+
+  // Custom votes state & error
+  const [customVotesInput, setCustomVotesInput] = useState<string>(
+    config.customVotesPerPerson != null ? String(config.customVotesPerPerson) : ''
+  );
+  const [votesInputError, setVotesInputError] = useState<string | null>(null);
+
+  // Duplicate votes state & error
+  const [duplicateInput, setDuplicateInput] = useState<string>(
+    String(config.maxDuplicateVotesPerParticipant || 1)
+  );
+  const [duplicateInputError, setDuplicateInputError] = useState<string | null>(null);
+
+  // Sync inputs when config updates
+  React.useEffect(() => {
+    if (config.customVotesPerPerson != null) {
+      setCustomVotesInput(String(config.customVotesPerPerson));
+    } else if (![1, 2, 3].includes(config.maxVotesPerPerson)) {
+      setCustomVotesInput(String(config.maxVotesPerPerson));
+    } else {
+      setCustomVotesInput('');
+    }
+  }, [config.customVotesPerPerson, config.maxVotesPerPerson]);
+
+  React.useEffect(() => {
+    setDuplicateInput(String(config.maxDuplicateVotesPerParticipant || 1));
+  }, [config.maxDuplicateVotesPerParticipant]);
+
+  React.useEffect(() => {
+    setManualExpanded(null);
+  }, [isImpressionModeEnabled]);
 
   const voteUrl = typeof window !== 'undefined'
     ? `${window.location.origin}${window.location.pathname}?mode=vote`
@@ -82,25 +119,30 @@ export const AudienceVotingControl: React.FC<AudienceVotingControlProps> = ({
   const maxVoteCount = Math.max(1, ...Object.values(votes));
 
   return (
-    <section className="bg-white rounded-2xl border-2 border-neutral-950 p-4 sm:p-5 shadow-md space-y-4">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-2 border-neutral-200 pb-3">
+    <section className="bg-white rounded-xl border-2 border-neutral-950 p-3 sm:p-3.5 shadow-sm space-y-3">
+      {/* Header (Clickable Accordion) */}
+      <div
+        onClick={() => setManualExpanded(!isSectionExpanded)}
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b-2 border-neutral-200 pb-2.5 cursor-pointer select-none group"
+      >
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-black bg-rose-500 text-white px-2 py-0.5 rounded border border-neutral-900 flex items-center gap-1 shadow-2xs">
-              <Vote className="w-3.5 h-3.5" />
-              <span>観覧者スマートフォン投票</span>
-            </span>
+            <Vote className="w-5 h-5 text-rose-500" />
             <span className="text-base sm:text-lg font-black text-neutral-950">
               観覧者投票・投票状況
             </span>
+            <span className="text-xs text-neutral-500 font-bold ml-1">
+              {isSectionExpanded ? '（クリックで閉じる）' : '（印象モードONまたはクリックで展開）'}
+            </span>
           </div>
-          <p className="text-xs text-neutral-600 font-bold mt-1">
-            観覧者がスマートフォンからQRコードを読み取り、誰が面白かったかをリアルタイムに投票できます。
-          </p>
+          {isSectionExpanded && (
+            <p className="text-xs text-neutral-600 font-bold mt-0.5">
+              観覧者がスマートフォンからQRコードを読み取り、誰が面白かったかをリアルタイムに投票できます。
+            </p>
+          )}
         </div>
 
-        {/* Status indicator */}
+        {/* Status indicator & Toggle Arrow */}
         <div className="flex items-center gap-2 flex-shrink-0">
           {config.isVotingActive ? (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-rose-100 text-rose-700 border border-rose-400 animate-pulse">
@@ -117,8 +159,18 @@ export const AudienceVotingControl: React.FC<AudienceVotingControlProps> = ({
               <span>停止中</span>
             </span>
           )}
+
+          <div
+            className="p-1.5 rounded-lg border border-neutral-300 bg-neutral-50 hover:bg-neutral-200 text-neutral-700 transition"
+            title={isSectionExpanded ? '折りたたむ' : '展開する'}
+          >
+            {isSectionExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </div>
         </div>
       </div>
+
+      {isSectionExpanded && (
+        <div className="space-y-4">
 
       {/* Main Switch Controls Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -243,53 +295,251 @@ export const AudienceVotingControl: React.FC<AudienceVotingControlProps> = ({
       <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-300 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
         {/* Rules settings */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Max votes per person */}
-          <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-neutral-900 shadow-2xs">
-            <span className="font-black text-neutral-700 text-[11px]">
-              1人あたりの票数:
-            </span>
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 5].map((num) => (
-                <button
-                  key={num}
-                  type="button"
-                  onClick={() =>
+          {/* Max votes per person (1, 2, 3 preset + custom stepper input) */}
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1.5 bg-white px-2.5 py-1.5 rounded-lg border border-neutral-900 shadow-2xs">
+              <span className="font-black text-neutral-700 text-[11px] whitespace-nowrap">
+                1人あたりの票数:
+              </span>
+              <div className="flex items-center gap-1">
+                {[1, 2, 3].map((num) => {
+                  const isChecked = config.customVotesPerPerson == null && config.maxVotesPerPerson === num;
+                  return (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => {
+                        setCustomVotesInput('');
+                        setVotesInputError(null);
+                        onUpdateConfig((prev) => ({
+                          ...prev,
+                          maxVotesPerPerson: num,
+                          customVotesPerPerson: null,
+                          maxDuplicateVotesPerParticipant: Math.min(
+                            prev.maxDuplicateVotesPerParticipant || 1,
+                            num
+                          ),
+                        }));
+                      }}
+                      className={`w-6 h-6 rounded text-xs font-black border transition cursor-pointer ${
+                        isChecked
+                          ? 'bg-neutral-950 text-amber-300 border-neutral-950'
+                          : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="text-[11px] font-bold text-neutral-600">票</span>
+
+              {/* Custom number input with counter */}
+              <div className="flex items-center gap-1 ml-1.5 pl-1.5 border-l border-neutral-300">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="任意"
+                  value={customVotesInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCustomVotesInput(val);
+                    if (!val.trim()) {
+                      setVotesInputError(null);
+                      return;
+                    }
+                    if (!/^\d+$/.test(val.trim())) {
+                      setVotesInputError('整数のみ入力可能です');
+                      return;
+                    }
+                    const parsed = parseInt(val.trim(), 10);
+                    if (isNaN(parsed) || parsed < 1) {
+                      setVotesInputError('1以上の整数を入力してください');
+                      return;
+                    }
+                    setVotesInputError(null);
                     onUpdateConfig((prev) => ({
                       ...prev,
-                      maxVotesPerPerson: num,
-                    }))
-                  }
-                  className={`w-6 h-6 rounded text-xs font-black border transition cursor-pointer ${
-                    (config.maxVotesPerPerson || 1) === num
-                      ? 'bg-neutral-950 text-amber-300 border-neutral-950'
-                      : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
+                      maxVotesPerPerson: parsed,
+                      customVotesPerPerson: parsed,
+                      maxDuplicateVotesPerParticipant: Math.min(
+                        prev.maxDuplicateVotesPerParticipant || 1,
+                        parsed
+                      ),
+                    }));
+                  }}
+                  className={`w-12 px-1 py-0.5 text-xs font-black text-center border rounded bg-white focus:outline-none focus:ring-1 ${
+                    votesInputError
+                      ? 'border-red-500 bg-red-50 text-red-900'
+                      : config.customVotesPerPerson != null
+                      ? 'border-neutral-950 bg-amber-100 text-neutral-950 font-black'
+                      : 'border-neutral-400 text-neutral-800'
                   }`}
-                >
-                  {num}
-                </button>
-              ))}
+                  title="任意の整数票数を入力"
+                />
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = config.customVotesPerPerson ?? (config.maxVotesPerPerson || 1);
+                      const next = current + 1;
+                      setCustomVotesInput(String(next));
+                      setVotesInputError(null);
+                      onUpdateConfig((prev) => ({
+                        ...prev,
+                        maxVotesPerPerson: next,
+                        customVotesPerPerson: next,
+                        maxDuplicateVotesPerParticipant: Math.min(
+                          prev.maxDuplicateVotesPerParticipant || 1,
+                          next
+                        ),
+                      }));
+                    }}
+                    className="w-4 h-3 bg-neutral-100 hover:bg-neutral-200 border border-neutral-400 rounded flex items-center justify-center text-[9px] font-black cursor-pointer"
+                    title="1増やす"
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = config.customVotesPerPerson ?? (config.maxVotesPerPerson || 1);
+                      const next = Math.max(1, current - 1);
+                      setCustomVotesInput(String(next));
+                      setVotesInputError(null);
+                      onUpdateConfig((prev) => ({
+                        ...prev,
+                        maxVotesPerPerson: next,
+                        customVotesPerPerson: next,
+                        maxDuplicateVotesPerParticipant: Math.min(
+                          prev.maxDuplicateVotesPerParticipant || 1,
+                          next
+                        ),
+                      }));
+                    }}
+                    className="w-4 h-3 bg-neutral-100 hover:bg-neutral-200 border border-neutral-400 rounded flex items-center justify-center text-[9px] font-black cursor-pointer"
+                    title="1減らす"
+                  >
+                    -
+                  </button>
+                </div>
+                <span className="text-[11px] font-bold text-neutral-600">票</span>
+              </div>
             </div>
-            <span className="text-[11px] font-bold text-neutral-600">票</span>
+            {votesInputError && (
+              <span className="text-[10px] text-red-600 font-bold ml-1">
+                ⚠️ {votesInputError}
+              </span>
+            )}
           </div>
 
-          {/* Multiple votes per participant */}
-          <div className="flex items-center gap-2 bg-white px-2.5 py-1.5 rounded-lg border border-neutral-900 shadow-2xs">
-            <span className="font-black text-neutral-700 text-[11px]">
-              同じ人への重複投票:
-            </span>
-            <Switch
-              size="sm"
-              checked={!!config.allowMultipleVotesPerParticipant}
-              onChange={(checked) =>
-                onUpdateConfig((prev) => ({
-                  ...prev,
-                  allowMultipleVotesPerParticipant: checked,
-                }))
-              }
-              onLabel="許可"
-              offLabel="不可"
-              ariaLabel="同じ人への重複投票許可"
-            />
+          {/* Multiple votes per participant toggle + Counter */}
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 bg-white px-2.5 py-1.5 rounded-lg border border-neutral-900 shadow-2xs">
+              <span className="font-black text-neutral-700 text-[11px] whitespace-nowrap">
+                同じ人への重複投票:
+              </span>
+              <Switch
+                size="sm"
+                checked={!!config.allowMultipleVotesPerParticipant}
+                onChange={(checked) =>
+                  onUpdateConfig((prev) => ({
+                    ...prev,
+                    allowMultipleVotesPerParticipant: checked,
+                  }))
+                }
+                onLabel="許可"
+                offLabel="不可"
+                ariaLabel="同じ人への重複投票許可"
+              />
+
+              {/* Duplicate votes cap counter when allowed */}
+              {config.allowMultipleVotesPerParticipant && (
+                <div className="flex items-center gap-1 ml-1 pl-2 border-l border-neutral-300">
+                  <span className="text-[10px] text-neutral-600 font-bold whitespace-nowrap">
+                    1人あたり最大:
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={duplicateInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDuplicateInput(val);
+                      if (!val.trim()) {
+                        setDuplicateInputError(null);
+                        return;
+                      }
+                      if (!/^\d+$/.test(val.trim())) {
+                        setDuplicateInputError('整数のみ入力可能です');
+                        return;
+                      }
+                      const parsed = parseInt(val.trim(), 10);
+                      if (isNaN(parsed) || parsed < 1) {
+                        setDuplicateInputError('1以上の整数を入力してください');
+                        return;
+                      }
+                      if (parsed > config.maxVotesPerPerson) {
+                        setDuplicateInputError(`1人あたりの票数（${config.maxVotesPerPerson}票）以下の数字を入力してください`);
+                        return;
+                      }
+                      setDuplicateInputError(null);
+                      onUpdateConfig((prev) => ({
+                        ...prev,
+                        maxDuplicateVotesPerParticipant: parsed,
+                      }));
+                    }}
+                    className={`w-10 px-1 py-0.5 text-xs font-black text-center border rounded bg-white focus:outline-none focus:ring-1 ${
+                      duplicateInputError
+                        ? 'border-red-500 bg-red-50 text-red-900'
+                        : 'border-neutral-950 bg-amber-50 text-neutral-950 font-black'
+                    }`}
+                  />
+                  <div className="flex flex-col gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const current = config.maxDuplicateVotesPerParticipant || 1;
+                        const next = Math.min(config.maxVotesPerPerson, current + 1);
+                        setDuplicateInput(String(next));
+                        setDuplicateInputError(null);
+                        onUpdateConfig((prev) => ({
+                          ...prev,
+                          maxDuplicateVotesPerParticipant: next,
+                        }));
+                      }}
+                      className="w-4 h-3 bg-neutral-100 hover:bg-neutral-200 border border-neutral-400 rounded flex items-center justify-center text-[9px] font-black cursor-pointer"
+                      title="1増やす"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const current = config.maxDuplicateVotesPerParticipant || 1;
+                        const next = Math.max(1, current - 1);
+                        setDuplicateInput(String(next));
+                        setDuplicateInputError(null);
+                        onUpdateConfig((prev) => ({
+                          ...prev,
+                          maxDuplicateVotesPerParticipant: next,
+                        }));
+                      }}
+                      className="w-4 h-3 bg-neutral-100 hover:bg-neutral-200 border border-neutral-400 rounded flex items-center justify-center text-[9px] font-black cursor-pointer"
+                      title="1減らす"
+                    >
+                      -
+                    </button>
+                  </div>
+                  <span className="text-[11px] font-bold text-neutral-600">票</span>
+                </div>
+              )}
+            </div>
+            {duplicateInputError && (
+              <span className="text-[10px] text-red-600 font-bold ml-1">
+                ⚠️ {duplicateInputError}
+              </span>
+            )}
           </div>
 
           {/* Reset button */}
@@ -496,6 +746,8 @@ export const AudienceVotingControl: React.FC<AudienceVotingControlProps> = ({
               );
             })}
           </div>
+        </div>
+      )}
         </div>
       )}
     </section>

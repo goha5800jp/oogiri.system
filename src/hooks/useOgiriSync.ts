@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { CHANNEL_NAME, OgiriState, STORAGE_KEY } from '../types/ogiri';
 import { createDefaultOgiriState } from '../utils/ogiriLogic';
 
@@ -135,26 +135,70 @@ export function useOgiriSync() {
     };
   }, []);
 
-  const updateState = (updater: OgiriState | ((prev: OgiriState) => OgiriState)) => {
-    setState((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch (err) {
-        console.error('Failed to save to localStorage:', err);
-      }
+  const updateState = useCallback(
+    (updater: OgiriState | ((prev: OgiriState) => OgiriState)) => {
+      setState((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        } catch (err) {
+          console.error('Failed to save to localStorage:', err);
+        }
 
-      if (channelRef.current) {
-        channelRef.current.postMessage({
-          type: 'STATE_UPDATE',
-          payload: next,
-          senderId: instanceIdRef.current,
-        });
-      }
+        if (channelRef.current) {
+          channelRef.current.postMessage({
+            type: 'STATE_UPDATE',
+            payload: next,
+            senderId: instanceIdRef.current,
+          });
+        }
 
-      return next;
-    });
-  };
+        return next;
+      });
+    },
+    []
+  );
+
+  // Dedicated update for audience votes & voters from Firestore
+  // Updates local React memory WITHOUT re-broadcasting over BroadcastChannel or writing full state to localStorage
+  const updateAudienceData = useCallback(
+    (votes: Record<number, number>, voters: any[]) => {
+      setState((prev) => {
+        const prevVotes = prev.audienceVotes || {};
+        const prevVoters = prev.audienceVoters || [];
+
+        const votesSame = JSON.stringify(prevVotes) === JSON.stringify(votes);
+        const votersSame =
+          prevVoters.length === voters.length &&
+          JSON.stringify(prevVoters.map((v) => `${v.id}_${v.hasVoted}`)) ===
+            JSON.stringify(voters.map((v) => `${v.id}_${v.hasVoted}`));
+
+        if (votesSame && votersSame) return prev;
+
+        const nextState = {
+          ...prev,
+          audienceVotes: votes,
+          audienceVoters: voters,
+        };
+
+        try {
+          const stored = localStorage.getItem(STORAGE_KEY);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            parsed.audienceVotes = votes;
+            parsed.audienceVoters = voters;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+          }
+        } catch {
+          // ignore
+        }
+
+        latestStateRef.current = nextState;
+        return nextState;
+      });
+    },
+    []
+  );
 
   // Timer interval countdown:
   // Runs based on targetEndTime. Does NOT broadcast decrements over BroadcastChannel every second.
@@ -210,5 +254,5 @@ export function useOgiriSync() {
     return () => clearInterval(interval);
   }, [state.timer.isRunning, state.timer.targetEndTime]);
 
-  return { state, updateState };
+  return { state, updateState, updateAudienceData };
 }

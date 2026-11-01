@@ -324,12 +324,12 @@ test('toCircledNumber converts 1..20 correctly to circled numbers', () => {
 
 test('resetAllToDefault returns full fresh default state', () => {
   const def = resetAllToDefault();
-  assert.equal(def.topics.length, 10);
-  assert.equal(def.participants.length, 20);
+  assert.equal(def.topics.length, 2);
+  assert.equal(def.participants.length, 6);
   assert.equal(def.colorPalette, 'yellow');
-  assert.equal(def.isScoringModeEnabled, true);
+  assert.equal(def.isScoringModeEnabled, false);
   assert.equal(def.activeAnsweringParticipantId, null);
-  assert.equal(def.titles?.length, 20);
+  assert.equal(def.titles?.length, 4);
   assert.deepEqual(def.gameLogs, []);
 });
 
@@ -340,8 +340,8 @@ test('resetExceptTopicsAndParticipants preserves topics, participants names/team
   current.participants[0].teamName = 'チームA';
   current.participants[0].score = 15;
   current.colorPalette = 'pink';
-  current.selectedTopicNumber = 5;
-  current.isScoringModeEnabled = false;
+  current.selectedTopicNumber = 2;
+  current.isScoringModeEnabled = true;
   current.activeAnsweringParticipantId = 1;
   current.titles = [{ id: 1, text: '第1回戦' }];
 
@@ -359,7 +359,7 @@ test('resetExceptTopicsAndParticipants preserves topics, participants names/team
   // Control and display states are reset to default
   assert.equal(res.colorPalette, 'yellow');
   assert.equal(res.selectedTopicNumber, 1);
-  assert.equal(res.isScoringModeEnabled, true);
+  assert.equal(res.isScoringModeEnabled, false);
   assert.equal(res.activeAnsweringParticipantId, null);
 });
 

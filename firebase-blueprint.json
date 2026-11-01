@@ -70,6 +70,63 @@
         }
       },
       "required": ["voterId", "participantId", "createdAt"]
+    },
+    "GayaSubmission": {
+      "title": "GayaSubmission",
+      "description": "Audience custom text submitted for moderator approval",
+      "type": "object",
+      "properties": {
+        "voterId": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Identifier of the sender"
+        },
+        "nickname": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Nickname of sender"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Submitted message text"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Timestamp in milliseconds"
+        },
+        "approved": {
+          "type": "boolean",
+          "description": "Whether moderator approved the message"
+        }
+      },
+      "required": ["nickname", "text", "createdAt"]
+    },
+    "GayaStreamEvent": {
+      "title": "GayaStreamEvent",
+      "description": "Approved or instant comment/reaction event streaming across monitor screen",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Streaming text or emoji"
+        },
+        "isTengu": {
+          "type": "boolean",
+          "description": "Whether this event is an oversized tengu emoji"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Timestamp in milliseconds"
+        },
+        "nickname": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Optional sender nickname"
+        }
+      },
+      "required": ["text", "createdAt"]
     }
   },
   "firestore": {
@@ -90,6 +147,18 @@
         "$ref": "#/entities/Vote"
       },
       "description": "Votes cast in the session"
+    },
+    "/sessions/{sessionId}/gaya_submissions/{submissionId}": {
+      "schema": {
+        "$ref": "#/entities/GayaSubmission"
+      },
+      "description": "Custom text submitted by audience waiting for approval"
+    },
+    "/sessions/{sessionId}/gaya_stream/{eventId}": {
+      "schema": {
+        "$ref": "#/entities/GayaStreamEvent"
+      },
+      "description": "Real-time streaming text events rendered on monitor"
     }
   }
 }

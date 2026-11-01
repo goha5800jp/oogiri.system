@@ -11,6 +11,14 @@ service cloud.firestore {
       match /votes/{voteId} {
         allow read, write: if true;
       }
+
+      match /gaya_submissions/{submissionId} {
+        allow read, write: if true;
+      }
+
+      match /gaya_stream/{eventId} {
+        allow read, write: if true;
+      }
     }
 
     match /{document=**} {

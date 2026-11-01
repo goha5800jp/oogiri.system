@@ -11,6 +11,7 @@ import {
   TopicFontOption,
   PresetItem,
   PresetCustomTimer,
+  TeamItem,
 } from '../types/ogiri';
 
 export const TOPIC_FONT_OPTIONS: TopicFontOption[] = [
@@ -242,6 +243,7 @@ export function parseFullStateFromJson(jsonStr: string): {
           : 0,
       topicFontFamily: parsed.topicFontFamily || 'gothic',
       isTopicBold: parsed.isTopicBold !== undefined ? parsed.isTopicBold : true,
+      isTopicOutline: !!parsed.isTopicOutline,
       answerLogs: Array.isArray(parsed.answerLogs)
         ? parsed.answerLogs.map((log: Partial<AnswerLogEntry>, idx: number) => ({
             id: log.id ?? idx + 1,
@@ -270,7 +272,31 @@ export function parseFullStateFromJson(jsonStr: string): {
         : defaults.presets,
       selectedPresetId: parsed.selectedPresetId ?? null,
       isPresetModeEnabled: !!parsed.isPresetModeEnabled,
-      audienceVoting: parsed.audienceVoting || defaults.audienceVoting,
+      isImpressionModeEnabled: !!parsed.isImpressionModeEnabled,
+      isVotingFeatureEnabled: parsed.isVotingFeatureEnabled !== false,
+      isTeamModeEnabled: !!parsed.isTeamModeEnabled,
+      teams: Array.isArray(parsed.teams) && parsed.teams.length > 0
+        ? parsed.teams.map((t: Partial<TeamItem>, idx: number) => ({
+            id: t.id ?? idx + 1,
+            name: t.name ?? '',
+          }))
+        : defaults.teams,
+      customBgUrl: parsed.customBgUrl,
+      bgScale: typeof parsed.bgScale === 'number' ? parsed.bgScale : defaults.bgScale,
+      bgOpacity: typeof parsed.bgOpacity === 'number' ? parsed.bgOpacity : defaults.bgOpacity,
+      bgBrightness: typeof parsed.bgBrightness === 'number' ? parsed.bgBrightness : defaults.bgBrightness,
+      bgPattern: (parsed.bgPattern === 'grid' || parsed.bgPattern === 'dots') ? parsed.bgPattern : 'none',
+      bgPatternScale: typeof parsed.bgPatternScale === 'number' ? parsed.bgPatternScale : 100,
+      bgPatternSpeed: typeof parsed.bgPatternSpeed === 'number' ? parsed.bgPatternSpeed : 100,
+      bgPatternOpacity: typeof parsed.bgPatternOpacity === 'number' ? parsed.bgPatternOpacity : 60,
+      bgPatternCount: typeof parsed.bgPatternCount === 'number' ? parsed.bgPatternCount : 100,
+      isGayaModeEnabled: !!parsed.isGayaModeEnabled,
+      audienceVoting: parsed.audienceVoting
+        ? {
+            ...defaults.audienceVoting,
+            ...parsed.audienceVoting,
+          }
+        : defaults.audienceVoting,
       audienceVotes: parsed.audienceVotes || defaults.audienceVotes || {},
       audienceVoters: Array.isArray(parsed.audienceVoters) ? parsed.audienceVoters : [],
     };
@@ -756,7 +782,7 @@ export function createDefaultOgiriState(): OgiriState {
   ];
 
   const defaultParticipants: Participant[] = [
-    { id: 1, name: '回答者 1', isParticipating: false, score: 0 },
+    { id: 1, name: '回答者 1', isParticipating: true, score: 0 },
     { id: 2, name: '回答者 2', isParticipating: false, score: 0 },
     { id: 3, name: '回答者 3', isParticipating: false, score: 0 },
     { id: 4, name: '回答者 4', isParticipating: false, score: 0 },
@@ -788,11 +814,12 @@ export function createDefaultOgiriState(): OgiriState {
     topicFontSizeOffset: 0,
     topicFontFamily: 'gothic',
     isTopicBold: true,
+    isTopicOutline: false,
     selectedTitleNumber: 1,
     isTitleVisible: false, // タイトルの表示: OFF
     participants: defaultParticipants,
     isParticipantsVisible: false, // 参加者の表示: OFF
-    activeParticipantOrder: [1, 2, 3, 4],
+    activeParticipantOrder: [1],
     timer: defaultTimer,
     scoreButtons: ['+1', '+2', '+3', '-1'],
     isScoreHiddenOnMonitor: false,
@@ -800,6 +827,23 @@ export function createDefaultOgiriState(): OgiriState {
     colorPalette: 'yellow',
     activeAnsweringParticipantId: null,
     isScoringModeEnabled: false, // 加点モード: OFF
+    isImpressionModeEnabled: false, // 印象モード: OFF
+    isVotingFeatureEnabled: true, // 投票機能: デフォルトON
+    isTeamModeEnabled: false, // タッグ・チーム戦: OFF
+    teams: [
+      { id: 1, name: 'チーム A' },
+      { id: 2, name: 'チーム B' },
+    ],
+    customBgUrl: undefined,
+    bgScale: 100,
+    bgOpacity: 100,
+    bgBrightness: 100,
+    bgPattern: 'none',
+    bgPatternScale: 100,
+    bgPatternSpeed: 100,
+    bgPatternOpacity: 60,
+    bgPatternCount: 100,
+    isGayaModeEnabled: false,
     titles: defaultTitles,
     gameLogs: [],
     answerLogs: createDefaultAnswerLogs(5),
@@ -810,12 +854,14 @@ export function createDefaultOgiriState(): OgiriState {
       isQrVisible: false,
       isVotingActive: false,
       maxVotesPerPerson: 1,
+      customVotesPerPerson: null,
       allowMultipleVotesPerParticipant: false,
+      maxDuplicateVotesPerParticipant: 1,
       sessionCode: 'current',
     },
     audienceVotes: {},
     audienceVoters: [],
-    version: 8,
+    version: 9,
   };
 }
 
@@ -838,6 +884,7 @@ export function resetExceptTopicsAndParticipants(currentState: OgiriState): Ogir
     topics: currentState.topics,
     topicFontFamily: currentState.topicFontFamily || 'gothic',
     isTopicBold: currentState.isTopicBold !== undefined ? currentState.isTopicBold : true,
+    isTopicOutline: !!currentState.isTopicOutline,
     topicFontSizeOffset: currentState.topicFontSizeOffset || 0,
     participants: currentState.participants.map((p) => ({
       ...p,
@@ -849,6 +896,11 @@ export function resetExceptTopicsAndParticipants(currentState: OgiriState): Ogir
     presets: currentState.presets || defaults.presets,
     selectedPresetId: currentState.selectedPresetId ?? null,
     isPresetModeEnabled: false,
+    bgPattern: currentState.bgPattern || 'none',
+    bgPatternScale: currentState.bgPatternScale ?? 100,
+    bgPatternSpeed: currentState.bgPatternSpeed ?? 100,
+    bgPatternOpacity: currentState.bgPatternOpacity ?? 60,
+    bgPatternCount: currentState.bgPatternCount ?? 100,
   };
 }
 

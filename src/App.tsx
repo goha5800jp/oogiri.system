@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useOgiriSync } from './hooks/useOgiriSync';
 import { ConsoleView } from './components/ConsoleView';
 import { MonitorView } from './components/MonitorView';
 import { AudienceVoteView } from './components/AudienceVoteView';
-import { Columns2, Monitor, SlidersHorizontal, Vote } from 'lucide-react';
+import { AudienceGayaView } from './components/AudienceGayaView';
+import { Columns2, Monitor, SlidersHorizontal, Vote, MessageSquare } from 'lucide-react';
 import { getActiveOrderedParticipants, calculateParticipantRanks } from './utils/ogiriLogic';
 import { GameLogItem } from './types/ogiri';
 import {
@@ -12,12 +13,13 @@ import {
 } from './services/audienceVotingService';
 
 export default function App() {
-  const { state, updateState } = useOgiriSync();
+  const { state, updateState, updateAudienceData } = useOgiriSync();
 
   // Detect mode from query parameter
-  const [viewMode, setViewMode] = useState<'console' | 'monitor' | 'split' | 'vote'>(() => {
+  const [viewMode, setViewMode] = useState<'console' | 'monitor' | 'split' | 'vote' | 'gaya'>(() => {
     const params = new URLSearchParams(window.location.search);
     const mode = params.get('mode') || params.get('view');
+    if (mode === 'gaya') return 'gaya';
     if (mode === 'vote') return 'vote';
     if (mode === 'monitor') return 'monitor';
     if (mode === 'split') return 'split';
@@ -29,7 +31,9 @@ export default function App() {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
       const mode = params.get('mode') || params.get('view');
-      if (mode === 'vote') {
+      if (mode === 'gaya') {
+        setViewMode('gaya');
+      } else if (mode === 'vote') {
         setViewMode('vote');
       } else if (mode === 'monitor') {
         setViewMode('monitor');
@@ -43,34 +47,63 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Sync state to Firebase Voting Session when in console/monitor mode
+  // Track serialized session payload to prevent redundant Firestore writes
+  const lastPublishedPayloadRef = useRef<string>('');
+  const roundIdRef = useRef<string>('round_init');
+
+  // When isVotingActive transitions from false to true, generate a fresh roundId
+  const prevVotingActiveRef = useRef<boolean>(false);
   useEffect(() => {
-    if (viewMode === 'vote') return;
+    const currentActive = !!state.audienceVoting?.isVotingActive;
+    if (currentActive && !prevVotingActiveRef.current) {
+      roundIdRef.current = 'round_' + Date.now();
+    }
+    prevVotingActiveRef.current = currentActive;
+  }, [state.audienceVoting?.isVotingActive]);
+
+  // Sync state to Firebase Voting Session ONLY from host console (never from monitor or voter tabs)
+  useEffect(() => {
+    if (viewMode !== 'console' && viewMode !== 'split') return;
 
     const activeList = getActiveOrderedParticipants(
       state.participants,
       state.activeParticipantOrder
     );
+    const effectiveParticipants = activeList;
+
     const selectedTopic = state.topics.find((t) => t.id === state.selectedTopicNumber);
 
-    updateVotingSession({
+    const payload = {
       isQrVisible: !!state.audienceVoting?.isQrVisible,
       isVotingActive: !!state.audienceVoting?.isVotingActive,
+      isGayaModeActive: !!state.isGayaModeEnabled,
       maxVotesPerPerson: state.audienceVoting?.maxVotesPerPerson || 1,
       allowMultipleVotesPerParticipant:
         !!state.audienceVoting?.allowMultipleVotesPerParticipant,
+      maxDuplicateVotesPerParticipant:
+        state.audienceVoting?.maxDuplicateVotesPerParticipant || state.audienceVoting?.maxVotesPerPerson || 1,
       topicText: selectedTopic?.text || '',
-      activeParticipants: activeList.map((p) => ({
+      roundId: roundIdRef.current,
+      activeParticipants: effectiveParticipants.map((p) => ({
         id: p.id,
-        name: p.name,
-        teamName: p.teamName,
-        avatarUrl: p.avatarUrl,
+        name: p.name || '',
+        teamName: p.teamName || '',
+        avatarUrl: p.avatarUrl || '',
       })),
-    }).catch(() => {});
+    };
+
+    const serialized = JSON.stringify(payload);
+    if (serialized === lastPublishedPayloadRef.current) return;
+    lastPublishedPayloadRef.current = serialized;
+
+    updateVotingSession(payload).catch((err) => {
+      console.warn('Voting session sync error:', err);
+    });
   }, [
     viewMode,
     state.audienceVoting?.isQrVisible,
     state.audienceVoting?.isVotingActive,
+    state.isGayaModeEnabled,
     state.audienceVoting?.maxVotesPerPerson,
     state.audienceVoting?.allowMultipleVotesPerParticipant,
     state.selectedTopicNumber,
@@ -80,32 +113,16 @@ export default function App() {
   ]);
 
   // Subscribe to incoming audience voters and votes from Firestore
+  // Uses updateAudienceData to update React memory without triggering BroadcastChannel or localStorage re-broadcasts
   useEffect(() => {
     if (viewMode === 'vote') return;
 
     const unsubscribe = subscribeToVotersAndVotes(({ voters, votes }) => {
-      updateState((prev) => {
-        const prevVotes = prev.audienceVotes || {};
-        const prevVoters = prev.audienceVoters || [];
-
-        const votesChanged = JSON.stringify(prevVotes) !== JSON.stringify(votes);
-        const votersChanged =
-          prevVoters.length !== voters.length ||
-          JSON.stringify(prevVoters.map((v) => `${v.id}_${v.hasVoted}`)) !==
-            JSON.stringify(voters.map((v) => `${v.id}_${v.hasVoted}`));
-
-        if (!votesChanged && !votersChanged) return prev;
-
-        return {
-          ...prev,
-          audienceVotes: votes,
-          audienceVoters: voters,
-        };
-      });
+      updateAudienceData(votes, voters);
     });
 
     return () => unsubscribe();
-  }, [viewMode, updateState]);
+  }, [viewMode, updateAudienceData]);
 
   const handleSaveGameLog = () => {
     updateState((prev) => {
@@ -200,16 +217,21 @@ export default function App() {
   };
 
   // Switch views
-  const handleSwitchMode = (mode: 'console' | 'monitor' | 'split' | 'vote') => {
+  const handleSwitchMode = (mode: 'console' | 'monitor' | 'split' | 'vote' | 'gaya') => {
     setViewMode(mode);
     const url = new URL(window.location.href);
-    if (mode === 'monitor' || mode === 'split' || mode === 'vote') {
+    if (mode === 'monitor' || mode === 'split' || mode === 'vote' || mode === 'gaya') {
       url.searchParams.set('mode', mode);
     } else {
       url.searchParams.delete('mode');
     }
     window.history.replaceState({}, '', url.toString());
   };
+
+  // Dedicated Audience Gaya Screen (Smartphone)
+  if (viewMode === 'gaya') {
+    return <AudienceGayaView />;
+  }
 
   // Dedicated Audience Vote Screen
   if (viewMode === 'vote') {
@@ -321,15 +343,31 @@ export default function App() {
           <span>分割</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => handleSwitchMode('vote')}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer bg-neutral-800 hover:bg-amber-400 hover:text-neutral-950 text-amber-300 border border-neutral-700"
-          title="観覧者スマートフォン投票画面（スマホ用）"
-        >
-          <Vote className="w-3.5 h-3.5" />
-          <span>投票画面</span>
-        </button>
+        {/* 「投票画面」ボタン：コンソールで印象モードがONの時のみ表示 */}
+        {state.isImpressionModeEnabled && (
+          <button
+            type="button"
+            onClick={() => handleSwitchMode('vote')}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer bg-neutral-800 hover:bg-amber-400 hover:text-neutral-950 text-amber-300 border border-neutral-700"
+            title="観覧者スマートフォン投票画面（スマホ用）"
+          >
+            <Vote className="w-3.5 h-3.5" />
+            <span>投票画面</span>
+          </button>
+        )}
+
+        {/* 「ガヤ画面」ボタン：ガヤモードがONの時のみ表示 */}
+        {state.isGayaModeEnabled && (
+          <button
+            type="button"
+            onClick={() => handleSwitchMode('gaya')}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-bold transition cursor-pointer bg-neutral-800 hover:bg-amber-400 hover:text-neutral-950 text-amber-300 border border-neutral-700"
+            title="観覧者スマートフォンガヤ画面（スマホ用）"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>ガヤ画面</span>
+          </button>
+        )}
       </div>
 
       <ConsoleView

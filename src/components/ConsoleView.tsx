@@ -69,6 +69,8 @@ import {
   EyeOff,
   BookmarkPlus,
   Database,
+  FolderArchive,
+  User,
 } from 'lucide-react';
 import { RecordsDatabaseView } from './RecordsDatabaseView';
 
@@ -331,27 +333,21 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
   };
 
   const handleShowTitle = () => {
-    updateState((prev) => {
-      const next = !prev.isTitleVisible;
-      showToast(next ? 'タイトルを表示しました' : 'タイトルを非表示にしました');
-      return { ...prev, isTitleVisible: next };
-    });
+    const next = !state.isTitleVisible;
+    updateState((prev) => ({ ...prev, isTitleVisible: next }));
+    showToast(next ? 'タイトルを表示しました' : 'タイトルを非表示にしました');
   };
 
   const handleShowParticipants = () => {
-    updateState((prev) => {
-      const next = !prev.isParticipantsVisible;
-      showToast(next ? '参加者を表示しました' : '参加者を非表示にしました');
-      return { ...prev, isParticipantsVisible: next };
-    });
+    const next = !state.isParticipantsVisible;
+    updateState((prev) => ({ ...prev, isParticipantsVisible: next }));
+    showToast(next ? '参加者を表示しました' : '参加者を非表示にしました');
   };
 
   const handleShowTopic = () => {
-    updateState((prev) => {
-      const next = !prev.isTopicVisible;
-      showToast(next ? 'お題を表示しました' : 'お題を非表示にしました');
-      return { ...prev, isTopicVisible: next };
-    });
+    const next = !state.isTopicVisible;
+    updateState((prev) => ({ ...prev, isTopicVisible: next }));
+    showToast(next ? 'お題を表示しました' : 'お題を非表示にしました');
   };
 
   const handleSaveLogClick = () => {
@@ -464,6 +460,72 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
     } catch {
       showToast('投票データのリセットに失敗しました');
     }
+  };
+
+  // Reset all participants' scores
+  const handleResetAllScores = () => {
+    updateState((prev) => ({
+      ...prev,
+      participants: prev.participants.map((p) => ({ ...p, score: 0 })),
+    }));
+    showToast('全員の得点を0点にリセットしました');
+  };
+
+  // Toggle 印象モード (Impression Mode) with mutual exclusion against 加点モード
+  const handleToggleImpressionMode = (targetOn: boolean) => {
+    if (targetOn && state.isScoringModeEnabled) {
+      setConfirmModal({
+        isOpen: true,
+        title: '印象モードへの切り替え',
+        message: '現在の加点の集計をクリアして印象モードに切り替えますか？',
+        onConfirm: () => {
+          updateState((prev) => ({
+            ...prev,
+            participants: prev.participants.map((p) => ({ ...p, score: 0 })),
+            isScoringModeEnabled: false,
+            isImpressionModeEnabled: true,
+          }));
+          showToast('印象モードをONにしました（加点をクリアしました）');
+        },
+      });
+      return;
+    }
+    updateState((prev) => ({
+      ...prev,
+      isImpressionModeEnabled: targetOn,
+    }));
+    showToast(targetOn ? '印象モードをONにしました' : '印象モードをOFFにしました');
+  };
+
+  // Toggle 加点モード (Scoring Mode) with mutual exclusion against 印象モード
+  const handleToggleScoringMode = (targetOn: boolean) => {
+    if (targetOn && state.isImpressionModeEnabled) {
+      setConfirmModal({
+        isOpen: true,
+        title: '加点モードへの切り替え',
+        message: '現在の投票状況をクリアして加点モードに切り替えますか？',
+        onConfirm: async () => {
+          await resetVotingData().catch(() => {});
+          updateState((prev) => ({
+            ...prev,
+            audienceVotes: {},
+            audienceVoters: [],
+            audienceVoting: prev.audienceVoting
+              ? { ...prev.audienceVoting, isVotingActive: false }
+              : undefined,
+            isImpressionModeEnabled: false,
+            isScoringModeEnabled: true,
+          }));
+          showToast('加点モードをONにしました（投票状況をクリアしました）');
+        },
+      });
+      return;
+    }
+    updateState((prev) => ({
+      ...prev,
+      isScoringModeEnabled: targetOn,
+    }));
+    showToast(targetOn ? '加点モードをONにしました' : '加点モードをOFFにしました');
   };
 
   // State to toggle appearance count display in 参加状況設定
@@ -601,6 +663,98 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
       const renumbered = currentTitles.map((t, idx) => ({ ...t, id: idx + 1 }));
       return { ...prev, titles: renumbered };
     });
+  };
+
+  // Drag and drop & handlers for teams (タッグ・チーム名)
+  const [draggedTeamIndex, setDraggedTeamIndex] = useState<number | null>(null);
+  const [dragOverTeamIndex, setDragOverTeamIndex] = useState<number | null>(null);
+  const [manualTeamExpanded, setManualTeamExpanded] = useState<boolean | null>(null);
+
+  const handleTeamDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedTeamIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', `${index}`);
+  };
+
+  const handleTeamDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverTeamIndex !== index) {
+      setDragOverTeamIndex(index);
+    }
+  };
+
+  const handleTeamDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedTeamIndex === null) return;
+    if (draggedTeamIndex !== dropIndex) {
+      reorderTeamItems(draggedTeamIndex, dropIndex);
+    }
+    setDraggedTeamIndex(null);
+    setDragOverTeamIndex(null);
+  };
+
+  const handleTeamDragEnd = () => {
+    setDraggedTeamIndex(null);
+    setDragOverTeamIndex(null);
+  };
+
+  const reorderTeamItems = (from: number, to: number) => {
+    if (from === to) return;
+    updateState((prev) => {
+      const currentTeams =
+        prev.teams && prev.teams.length > 0
+          ? [...prev.teams]
+          : [
+              { id: 1, name: 'チーム A' },
+              { id: 2, name: 'チーム B' },
+            ];
+      const [moved] = currentTeams.splice(from, 1);
+      currentTeams.splice(to, 0, moved);
+      const renumbered = currentTeams.map((t, idx) => ({ ...t, id: idx + 1 }));
+      return { ...prev, teams: renumbered };
+    });
+  };
+
+  const handleTeamChange = (id: number, name: string) => {
+    updateState((prev) => ({
+      ...prev,
+      teams: (prev.teams || []).map((t) => (t.id === id ? { ...t, name } : t)),
+    }));
+  };
+
+  const handleClearTeam = (id: number) => {
+    updateState((prev) => ({
+      ...prev,
+      teams: (prev.teams || []).map((t) => (t.id === id ? { ...t, name: '' } : t)),
+    }));
+  };
+
+  const handleAddTeam = () => {
+    updateState((prev) => {
+      const list = prev.teams || [];
+      if (list.length >= 4) return prev;
+      const nextId = list.length + 1;
+      const letters = ['A', 'B', 'C', 'D'];
+      const nextLetter = letters[list.length] || `${nextId}`;
+      return {
+        ...prev,
+        teams: [...list, { id: nextId, name: `チーム ${nextLetter}` }],
+      };
+    });
+    showToast('チームの項目を追加しました');
+  };
+
+  const handleRemoveTeam = () => {
+    updateState((prev) => {
+      const list = prev.teams || [];
+      if (list.length <= 1) return prev;
+      return {
+        ...prev,
+        teams: list.slice(0, -1),
+      };
+    });
+    showToast('チームの項目を減らしました');
   };
 
   // Game logs handlers (記録１：試合ログ)
@@ -879,6 +1033,9 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
     (p) => p.name.trim() !== ''
   );
 
+  // Effective active participants: strictly use participants who are toggled "participating"
+  const effectiveActiveParticipants = activeParticipants;
+
   // Current selected topic
   const currentTopic = state.topics.find(
     (t) => t.id === state.selectedTopicNumber
@@ -1127,15 +1284,6 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
     }));
   };
 
-  // Reset all participants' scores
-  const handleResetAllScores = () => {
-    updateState((prev) => ({
-      ...prev,
-      participants: prev.participants.map((p) => ({ ...p, score: 0 })),
-    }));
-    showToast('全員の得点を0点にリセットしました');
-  };
-
   // Download Topics as .txt file (includes images and isUsed status)
   const handleDownloadTopics = () => {
     const textContent = exportTopicsToText(state.topics);
@@ -1248,94 +1396,79 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
       {/* ======================================================== */}
       <nav
         aria-label="コンソールページ切り替え"
-        className="max-w-6xl mx-auto mb-3 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md rounded-2xl p-2 sm:p-2.5 border-2 border-neutral-950 shadow-md transition-all sticky top-2 z-40"
+        className="max-w-6xl mx-auto mb-2 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md rounded-xl p-1.5 sm:p-2 border-2 border-neutral-950 shadow-sm transition-all sticky top-1.5 z-40"
       >
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
           {/* Page Tabs */}
-          <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-            {/* P.00: 記録２：データベース */}
+          <div className="flex items-center gap-1 sm:gap-1.5 w-full sm:w-auto overflow-x-auto pb-0.5 sm:pb-0">
+            {/* 記録２：データベース */}
             <button
               type="button"
               onClick={() => setCurrentPage('records2_db')}
-              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl font-black text-xs sm:text-sm border-2 transition-all cursor-pointer whitespace-nowrap ${
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg font-black text-xs sm:text-sm border-2 transition-all cursor-pointer whitespace-nowrap ${
                 currentPage === 'records2_db'
-                  ? 'bg-neutral-950 text-indigo-300 border-neutral-950 shadow-md scale-102 ring-2 ring-indigo-400'
+                  ? 'bg-neutral-950 text-indigo-300 border-neutral-950 shadow-xs ring-2 ring-indigo-400'
                   : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
               }`}
             >
-              <Database className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-400" />
-              <span>記録２：データベース</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-400 text-neutral-950 font-black">
-                P.00
-              </span>
+              <Database className="w-3.5 h-3.5 text-indigo-400" />
+              <span>記録２ 統計</span>
             </button>
 
-            {/* P.0: 記録１：試合ログ */}
+            {/* 記録１：試合ログ */}
             <button
               type="button"
               onClick={() => setCurrentPage('logs')}
-              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl font-black text-xs sm:text-sm border-2 transition-all cursor-pointer whitespace-nowrap ${
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg font-black text-xs sm:text-sm border-2 transition-all cursor-pointer whitespace-nowrap ${
                 currentPage === 'logs'
-                  ? 'bg-neutral-950 text-emerald-300 border-neutral-950 shadow-md scale-102 ring-2 ring-emerald-400'
+                  ? 'bg-neutral-950 text-emerald-300 border-neutral-950 shadow-xs ring-2 ring-emerald-400'
                   : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
               }`}
             >
-              <ScrollText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
-              <span>記録１：試合ログ</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-400 text-neutral-950 font-black">
-                P.0
-              </span>
+              <ScrollText className="w-3.5 h-3.5 text-emerald-500" />
+              <span>記録１ ログ管理</span>
             </button>
 
-            {/* P.1: メインコンソール */}
+            {/* メインコンソール */}
             <button
               type="button"
               onClick={() => setCurrentPage('main')}
-              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl font-black text-xs sm:text-sm border-2 transition-all cursor-pointer whitespace-nowrap ${
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg font-black text-xs sm:text-sm border-2 transition-all cursor-pointer whitespace-nowrap ${
                 currentPage === 'main'
-                  ? 'bg-neutral-950 text-amber-300 border-neutral-950 shadow-md scale-102 ring-2 ring-amber-400'
+                  ? 'bg-neutral-950 text-amber-300 border-neutral-950 shadow-xs ring-2 ring-amber-400'
                   : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
               }`}
             >
-              <SlidersHorizontal className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
+              <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
               <span>メインコンソール</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-400 text-neutral-950 font-black">
-                P.1
-              </span>
             </button>
 
-            {/* P.2: サブコンソール１：準備 */}
+            {/* サブコンソール１：準備 */}
             <button
               type="button"
               onClick={() => setCurrentPage('sub1_prep')}
-              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl font-black text-xs sm:text-sm border-2 transition-all cursor-pointer whitespace-nowrap ${
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg font-black text-xs sm:text-sm border-2 transition-all cursor-pointer whitespace-nowrap ${
                 currentPage === 'sub1_prep'
-                  ? 'bg-neutral-950 text-sky-300 border-neutral-950 shadow-md scale-102 ring-2 ring-sky-400'
+                  ? 'bg-neutral-950 text-sky-300 border-neutral-950 shadow-xs ring-2 ring-sky-400'
                   : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
               }`}
             >
-              <Settings2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-400" />
-              <span>サブコンソール１：準備</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-400 text-neutral-950 font-black">
-                P.2
-              </span>
+              <Settings2 className="w-3.5 h-3.5 text-sky-400" />
+              <span>サブ１ 準備</span>
             </button>
 
-            {/* P.3: サブコンソール２：プリセット */}
+            {/* サブコンソール２：プリセット */}
             <button
               type="button"
               onClick={() => setCurrentPage('sub2_preset')}
-              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl font-black text-xs sm:text-sm border-2 transition-all cursor-pointer whitespace-nowrap ${
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg font-black text-xs sm:text-sm border-2 transition-all cursor-pointer whitespace-nowrap ${
                 currentPage === 'sub2_preset'
-                  ? 'bg-neutral-950 text-purple-300 border-neutral-950 shadow-md scale-102 ring-2 ring-purple-400'
+                  ? 'bg-neutral-950 text-purple-300 border-neutral-950 shadow-xs ring-2 ring-purple-400'
                   : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-800 border-neutral-300'
               }`}
             >
-              <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400" />
-              <span>サブコンソール２：プリセット</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-400 text-neutral-950 font-black">
-                P.3
-              </span>
+              <Layers className="w-3.5 h-3.5 text-purple-400" />
+              <span>サブ２ プリセット</span>
             </button>
           </div>
 
@@ -1459,40 +1592,29 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
 
       {/* Top Header */}
       <header
-        className={`max-w-6xl mx-auto mb-3 sm:mb-4 rounded-xl p-3 sm:p-4 border-2 shadow-md transition-colors ${theme.headerBgClass}`}
+        className={`max-w-6xl mx-auto mb-2 sm:mb-2.5 rounded-xl p-2.5 sm:p-3 border-2 shadow-sm transition-colors ${theme.headerBgClass}`}
       >
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
           <div className="w-full md:w-auto">
-            {/* Top row with Zoom Control and status */}
-            <div className="flex flex-wrap items-center justify-between md:justify-start gap-2.5 mb-2">
-              {/* Zoom Control at top left */}
+            {/* Top row with Zoom Control */}
+            <div className="flex items-center gap-3 mb-1">
               <ZoomControl
                 zoom={zoom}
                 onZoomChange={handleZoomChange}
                 isDark={theme.isDark}
               />
-              <div className="flex items-center gap-2">
-                <span className="bg-neutral-950 text-[#FEF9C3] px-2.5 py-0.5 rounded text-xs tracking-wider uppercase font-black">
-                  CONSOLE
-                </span>
-                <span className="inline-flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-100 border border-emerald-600 px-2 py-0.5 rounded-full font-bold">
-                  <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-                  リアルタイム同期稼働中
-                </span>
-              </div>
+              <span
+                className={`text-[11px] font-mono font-bold tracking-tight ${theme.subTextClass}`}
+              >
+                build : 2026/10/26
+              </span>
             </div>
             <h1
-              className={`text-xl sm:text-2xl font-black tracking-tight ${theme.textColorClass}`}
+              className={`text-lg sm:text-xl font-black tracking-tight ${theme.textColorClass}`}
             >
               フリップ大喜利 コンソール画面 (運営操作用)
             </h1>
-            {/* Requested build date below title */}
-            <p
-              className={`text-[11px] font-mono font-bold tracking-tight ${theme.subTextClass}`}
-            >
-              build : 2026/10/26
-            </p>
-            <p className={`text-xs sm:text-sm font-bold mt-1 ${theme.subTextClass}`}>
+            <p className={`text-xs font-bold mt-0.5 ${theme.subTextClass}`}>
               お題・タイマー・参加状況・得点を手元でリアルタイム制御し、モニター画面に即時反映します。
             </p>
           </div>
@@ -1500,19 +1622,19 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
             <button
               type="button"
               onClick={onOpenMonitor}
-              className="flex-1 md:flex-initial inline-flex items-center justify-center gap-2 bg-neutral-950 hover:bg-neutral-800 text-[#FEF9C3] px-4 py-2.5 rounded-lg border-2 border-neutral-950 shadow hover:shadow-lg transition cursor-pointer font-black text-sm"
+              className="flex-1 md:flex-initial inline-flex items-center justify-center gap-1.5 bg-neutral-950 hover:bg-neutral-800 text-[#FEF9C3] px-3.5 py-2 rounded-lg border-2 border-neutral-950 shadow-xs hover:shadow transition cursor-pointer font-black text-xs sm:text-sm"
               title="別ウィンドウでモニター画面を開き、拡張ディスプレイに移動させて全画面化してください"
             >
-              <ExternalLink className="w-4 h-4" />
+              <ExternalLink className="w-3.5 h-3.5" />
               <span>別ウィンドウでモニター画面を開く</span>
             </button>
             <button
               type="button"
               onClick={onSwitchToMonitorView}
-              className="inline-flex items-center justify-center gap-1.5 bg-amber-200 hover:bg-amber-300 text-neutral-950 px-3.5 py-2.5 rounded-lg border-2 border-neutral-950 shadow transition cursor-pointer text-sm font-bold"
+              className="inline-flex items-center justify-center gap-1.5 bg-amber-200 hover:bg-amber-300 text-neutral-950 px-3 py-2 rounded-lg border-2 border-neutral-950 shadow-xs transition cursor-pointer text-xs sm:text-sm font-bold"
               title="この画面内でモニター表示を直接確認する"
             >
-              <Tv className="w-4 h-4" />
+              <Tv className="w-3.5 h-3.5" />
               <span>モニター確認</span>
             </button>
           </div>
@@ -1553,21 +1675,19 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
           {/* ======================================================== */}
           {/* ページ0: 記録１：試合ログ */}
           {/* ======================================================== */}
-          <div className="w-1/5 px-2 sm:px-3 flex-shrink-0 space-y-6">
+          <div className="w-1/5 px-2 sm:px-3 flex-shrink-0 space-y-3.5 sm:space-y-4">
             {/* Header Card */}
             <div
-              className={`rounded-xl border-2 p-4 sm:p-5 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
+              className={`rounded-xl border-2 p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
                 theme.isDark
                   ? 'bg-emerald-950/40 border-emerald-800'
                   : 'bg-emerald-50 border-emerald-300'
               }`}
             >
               <div>
-                <span className="text-xs bg-emerald-600 text-white px-2 py-0.5 rounded font-black">
-                  記録１
-                </span>
-                <h2 className={`text-lg sm:text-xl font-black mt-1 ${theme.textColorClass}`}>
-                  【試合ログ】リアルタイム記録
+                <h2 className={`text-base sm:text-lg font-black flex items-center gap-2 ${theme.textColorClass}`}>
+                  <ScrollText className="w-5 h-5 text-emerald-500" />
+                  <span>【試合ログ】リアルタイム記録</span>
                 </h2>
                 <p className={`text-xs font-bold mt-0.5 ${theme.subTextClass}`}>
                   モニター画面の「ログを保存」ボタンを押した際のお題・参加者・得点データを記録・蓄積します。
@@ -1829,7 +1949,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
                 className="inline-flex items-center gap-2 bg-indigo-700 hover:bg-indigo-800 text-white px-5 py-3 rounded-xl font-black text-sm cursor-pointer shadow-lg border-2 border-indigo-900 transition hover:scale-102"
               >
                 <ChevronLeft className="w-5 h-5" />
-                <span>記録２：データベース へ移動</span>
+                <span>記録２ 統計 へ移動</span>
               </button>
               <button
                 type="button"
@@ -1849,16 +1969,13 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
           <div className="w-1/5 px-2 sm:px-3 flex-shrink-0 space-y-6">
             {/* 最上段: 【リアルタイムコントロール】 (現在モニター表示中の時間, テキストの表示, コントロールパネル) */}
             <section
-              className={`rounded-xl border-2 p-4 sm:p-6 shadow-md space-y-5 transition-colors ${theme.sectionBgClass}`}
+              className={`rounded-xl border-2 p-3 sm:p-4 shadow-sm space-y-3 transition-colors ${theme.sectionBgClass}`}
             >
           <div
-            className={`border-b-2 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${theme.borderClass}`}
+            className={`border-b-2 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${theme.borderClass}`}
           >
             <div>
-              <span className="text-xs bg-amber-400 text-neutral-950 px-2 py-0.5 rounded border border-neutral-900 font-black">
-                最重要・高頻度操作
-              </span>
-              <h2 className="text-lg sm:text-xl font-black mt-1">
+              <h2 className="text-base sm:text-lg font-black">
                 【リアルタイムコントロール】
               </h2>
               <p className={`text-xs font-bold mt-0.5 ${theme.subTextClass}`}>
@@ -1866,8 +1983,8 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
               </p>
             </div>
 
-            {/* 全設定ダウンロード & アップロード ボタン */}
-            <div className="flex flex-wrap items-center gap-2">
+            {/* 全設定ダウンロード & アップロード & ソースコードZIP ボタン */}
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <input
                 type="file"
                 ref={fullStateFileInputRef}
@@ -1878,7 +1995,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
               <button
                 type="button"
                 onClick={handleDownloadFullState}
-                className="inline-flex items-center gap-1.5 bg-amber-200 hover:bg-amber-300 text-neutral-950 px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-xs font-black text-xs cursor-pointer transition"
+                className="inline-flex items-center gap-1.5 bg-amber-200 hover:bg-amber-300 text-neutral-950 px-2.5 py-1.5 rounded-lg border-2 border-neutral-950 shadow-xs font-black text-xs cursor-pointer transition"
                 title="現在設定されている全項目（お題画像・参加者・タイマー等）を1つのJSONファイルとして保存します"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -1888,31 +2005,41 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
               <button
                 type="button"
                 onClick={() => fullStateFileInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 bg-white hover:bg-neutral-100 text-neutral-950 px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-xs font-black text-xs cursor-pointer transition"
+                className="inline-flex items-center gap-1.5 bg-white hover:bg-neutral-100 text-neutral-950 px-2.5 py-1.5 rounded-lg border-2 border-neutral-950 shadow-xs font-black text-xs cursor-pointer transition"
                 title="保存した全設定JSONファイルを読み込んで一括復元します"
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>全設定をアップロード</span>
               </button>
+
+              <a
+                href={`/flip_ogiri_source_code.zip?t=${Date.now()}`}
+                onClick={(e) => {
+                  (e.currentTarget as HTMLAnchorElement).href = `/flip_ogiri_source_code.zip?t=${Date.now()}`;
+                }}
+                download="flip_ogiri_source_code.zip"
+                className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-lg border-2 border-neutral-950 shadow-xs font-black text-xs cursor-pointer transition"
+                title="最新のソースコード一式（ZIP）を手元のPCにダウンロードします（キャッシュ無効化付き）"
+              >
+                <FolderArchive className="w-3.5 h-3.5 text-indigo-200" />
+                <span>最新ソースコード一式 (ZIP) をダウンロード</span>
+              </a>
             </div>
           </div>
 
           {/* ======================================================== */}
           {/* プリセットの読み込み (Subconsole 2 で作成した設定の呼び出し) */}
           {/* ======================================================== */}
-          <div className="bg-white p-4 sm:p-5 rounded-lg border-2 border-neutral-950 shadow-sm space-y-3 text-neutral-950">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="bg-white p-3 sm:p-3.5 rounded-lg border-2 border-neutral-950 shadow-xs space-y-2.5 text-neutral-950">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="flex items-center gap-2">
                 <Layers className="w-5 h-5 text-purple-600" />
                 <h3 className="text-base sm:text-lg font-black text-neutral-950">
                   プリセットの読み込み
                 </h3>
-                <span className="text-xs bg-purple-100 text-purple-900 px-2 py-0.5 rounded font-bold border border-purple-400">
-                  P.3連動
-                </span>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
                 <span className="text-xs sm:text-sm font-bold text-neutral-700">
                   プリセットを使用する:
                 </span>
@@ -1931,7 +2058,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
             </div>
 
             {state.isPresetModeEnabled && (
-              <div className="pt-2 space-y-3 border-t border-purple-200 animate-in fade-in duration-150">
+              <div className="pt-2 space-y-2 border-t border-purple-200 animate-in fade-in duration-150">
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <label htmlFor="preset-select" className="text-xs font-black text-neutral-900 flex-shrink-0">
                     適用するプリセット:
@@ -1946,7 +2073,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
                         updateState((prev) => ({ ...prev, selectedPresetId: null }));
                       }
                     }}
-                    className="flex-1 bg-white text-neutral-950 font-bold px-3 py-2 rounded-lg border-2 border-neutral-950 shadow-xs focus:ring-2 focus:ring-purple-500 text-xs sm:text-sm cursor-pointer"
+                    className="flex-1 bg-white text-neutral-950 font-bold px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-xs focus:ring-2 focus:ring-purple-500 text-xs sm:text-sm cursor-pointer"
                   >
                     <option value="">-- プリセットを選択してください --</option>
                     {(state.presets || []).map((preset, idx) => (
@@ -1959,11 +2086,11 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setCurrentPage('sub2_preset')}
-                    className="inline-flex items-center justify-center gap-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg font-bold text-xs border border-purple-900 shadow-xs transition cursor-pointer flex-shrink-0"
-                    title="サブコンソール２：プリセット へ移動して編集"
+                    className="inline-flex items-center justify-center gap-1 bg-purple-600 hover:bg-purple-700 text-white px-2.5 py-1.5 rounded-lg font-bold text-xs border border-purple-900 shadow-xs transition cursor-pointer flex-shrink-0"
+                    title="サブ２ プリセット へ移動して編集"
                   >
                     <Layers className="w-3.5 h-3.5" />
-                    <span>プリセット一覧・編集 (P.3)</span>
+                    <span>プリセット一覧・編集</span>
                   </button>
                 </div>
 
@@ -1974,11 +2101,11 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
                   const titleObj = currentPreset.selectedTitleNumber ? state.titles?.[currentPreset.selectedTitleNumber - 1] : undefined;
                   const topicObj = currentPreset.selectedTopicNumber ? state.topics?.[currentPreset.selectedTopicNumber - 1] : undefined;
                   return (
-                    <div className="p-2.5 bg-purple-50/80 rounded-md border-2 border-purple-300 text-xs space-y-1 text-neutral-950">
+                    <div className="p-2 bg-purple-50/80 rounded-md border border-purple-300 text-xs space-y-1 text-neutral-950">
                       <div className="font-black text-purple-950">
                         選択中: {getPresetDisplayName(currentPreset, idx, state.titles)}
                       </div>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-bold text-neutral-700">
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] font-bold text-neutral-700">
                         <span>
                           タイトル: {currentPreset.isTitleEnabled ? (titleObj?.text ? `「${titleObj.text}」` : `#${currentPreset.selectedTitleNumber}`) : '（設定なし）'}
                         </span>
@@ -2002,12 +2129,9 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
           {/* ======================================================== */}
           {/* 開始前後の操作 (左・中央・右の3分割ワンタッチコントロール) */}
           {/* ======================================================== */}
-          <div className="bg-neutral-100 dark:bg-neutral-900/80 p-4 sm:p-5 rounded-lg border-2 border-neutral-950 shadow-sm space-y-3">
+          <div className="bg-neutral-100 dark:bg-neutral-900/80 p-3 sm:p-3.5 rounded-lg border-2 border-neutral-950 shadow-xs space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-xs bg-neutral-950 text-white dark:bg-neutral-100 dark:text-neutral-950 px-2 py-0.5 rounded font-black">
-                  ワンタッチ進行
-                </span>
                 <h3 className="text-base sm:text-lg font-black text-neutral-950 dark:text-neutral-100">
                   開始前後の操作
                 </h3>
@@ -2017,22 +2141,22 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-stretch">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 items-stretch">
               {/* 左側: タイトル・お題・参加者を隠す */}
               <button
                 type="button"
                 onClick={handleHideAllMainDisplays}
-                className="bg-neutral-800 hover:bg-neutral-900 text-white rounded-xl border-2 border-neutral-950 p-3.5 shadow flex flex-col items-center justify-center gap-2 text-center transition cursor-pointer active:scale-98 min-h-[96px]"
+                className="bg-neutral-800 hover:bg-neutral-900 text-white rounded-xl border-2 border-neutral-950 p-2.5 shadow-xs flex flex-col items-center justify-center gap-1.5 text-center transition cursor-pointer active:scale-98 min-h-[72px]"
                 title="タイトル・お題・参加者の表示スイッチを3つ同時にOFFにします"
               >
-                <div className="w-8 h-8 rounded-full bg-neutral-700 flex items-center justify-center">
-                  <EyeOff className="w-5 h-5 text-amber-300" />
+                <div className="w-7 h-7 rounded-full bg-neutral-700 flex items-center justify-center">
+                  <EyeOff className="w-4 h-4 text-amber-300" />
                 </div>
                 <div>
                   <div className="text-xs sm:text-sm font-black text-amber-300">
                     タイトル・お題・参加者を隠す
                   </div>
-                  <div className="text-[10px] text-neutral-300 font-bold mt-0.5">
+                  <div className="text-[10px] text-neutral-300 font-bold">
                     3つの表示スイッチを一括OFF
                   </div>
                 </div>
@@ -2117,17 +2241,17 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
               <button
                 type="button"
                 onClick={handleSaveLogClick}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl border-2 border-neutral-950 p-3.5 shadow flex flex-col items-center justify-center gap-2 text-center transition cursor-pointer active:scale-98 min-h-[96px]"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl border-2 border-neutral-950 p-2.5 shadow-xs flex flex-col items-center justify-center gap-1.5 text-center transition cursor-pointer active:scale-98 min-h-[72px]"
                 title="現在のタイトル・お題・参加者・得点を試合ログに保存します"
               >
-                <div className="w-8 h-8 rounded-full bg-emerald-800 flex items-center justify-center">
-                  <BookmarkPlus className="w-5 h-5 text-white" />
+                <div className="w-7 h-7 rounded-full bg-emerald-800 flex items-center justify-center">
+                  <BookmarkPlus className="w-4 h-4 text-white" />
                 </div>
                 <div>
                   <div className="text-xs sm:text-sm font-black text-white">
                     ログの保存
                   </div>
-                  <div className="text-[10px] text-emerald-100 font-bold mt-0.5">
+                  <div className="text-[10px] text-emerald-100 font-bold">
                     現在の試合状況を記録１に保存
                   </div>
                 </div>
@@ -2143,28 +2267,25 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
           />
 
           {/* 2. 「お題・タイトルの表示」のボックス */}
-          <div className="bg-[#FFFDE7] p-3.5 sm:p-4 rounded-lg border-2 border-neutral-950 shadow-sm space-y-3.5">
+          <div className="bg-[#FFFDE7] p-2.5 sm:p-3 rounded-lg border-2 border-neutral-950 shadow-xs space-y-2.5">
             {/* Header */}
-            <div className="flex items-center gap-2 border-b border-neutral-300 pb-2">
-              <span className="w-3 h-3 rounded-full bg-neutral-950" />
+            <div className="flex items-center gap-2 border-b border-neutral-300 pb-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-neutral-950" />
               <h3 className="text-base sm:text-lg font-black text-neutral-950">
                 お題・タイトルの表示
               </h3>
             </div>
 
             {/* お題の表示エリア */}
-            <div className="space-y-2.5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs bg-amber-400 text-neutral-950 px-2 py-0.5 rounded font-black border border-neutral-900">
-                    お題
-                  </span>
                   <span className="text-xs sm:text-sm font-black text-neutral-900">
                     お題の表示設定
                   </span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
                   {/* Topic Font Size adjustment */}
                   <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border-2 border-neutral-950 shadow-xs">
                     <span className="text-xs font-bold text-neutral-700">
@@ -2325,18 +2446,15 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
             <div className="border-t-2 border-dashed border-neutral-300" />
 
             {/* タイトルの表示エリア */}
-            <div className="space-y-2.5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs bg-sky-500 text-white px-2 py-0.5 rounded font-black border border-neutral-900">
-                    タイトル
-                  </span>
                   <span className="text-xs sm:text-sm font-black text-neutral-900">
                     タイトルの表示設定
                   </span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
                   {/* Title Number Counter */}
                   <div className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-lg border-2 border-neutral-950 shadow-xs">
                     <span className="text-xs font-bold text-neutral-700">
@@ -2431,10 +2549,10 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
           </div>
 
           {/* 3. 「参加状況設定」（コントロールパネルの上に移動・参加回数表示スイッチ付き） */}
-          <div className="bg-[#FFFDE7] p-3.5 sm:p-4 rounded-lg border-2 border-neutral-950 shadow-sm space-y-3.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-300 pb-2.5">
+          <div className="bg-[#FFFDE7] p-2.5 sm:p-3 rounded-lg border-2 border-neutral-950 shadow-xs space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-neutral-300 pb-2">
               <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-neutral-950" />
+                <span className="w-2.5 h-2.5 rounded-full bg-neutral-950" />
                 <h3 className="text-base sm:text-lg font-black text-neutral-950">
                   参加状況設定
                 </h3>
@@ -2550,39 +2668,42 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
             </div>
           </div>
 
-          {/* 3. 「観覧者スマートフォン投票」（QRコード表示・投票受付・リアルタイム状況） */}
-          <AudienceVotingControl
-            config={
-              state.audienceVoting || {
-                isQrVisible: false,
-                isVotingActive: false,
-                maxVotesPerPerson: 1,
-                allowMultipleVotesPerParticipant: false,
-                sessionCode: 'current',
+          {/* 3. 「観覧者スマートフォン投票」（QRコード表示・投票受付・リアルタイム状況） - 印象モードON時のみ表示（投票機能OFF時は非表示） */}
+          {!!state.isImpressionModeEnabled && state.isVotingFeatureEnabled !== false && (
+            <AudienceVotingControl
+              config={
+                state.audienceVoting || {
+                  isQrVisible: false,
+                  isVotingActive: false,
+                  maxVotesPerPerson: 1,
+                  allowMultipleVotesPerParticipant: false,
+                  sessionCode: 'current',
+                }
               }
-            }
-            votes={state.audienceVotes || {}}
-            voters={state.audienceVoters || []}
-            participants={activeParticipants}
-            onUpdateConfig={handleUpdateAudienceVotingConfig}
-            onResetVotes={handleResetAudienceVoting}
-            isResultAnnouncementActive={!!state.resultAnnouncement?.isActive}
-            onToggleResultAnnouncement={handleToggleResultAnnouncement}
-            isScoringModeEnabled={state.isScoringModeEnabled ?? true}
-            onRequestOpenConfirm={(title, message, onConfirm) =>
-              setConfirmModal({
-                isOpen: true,
-                title,
-                message,
-                onConfirm,
-              })
-            }
-            showToast={showToast}
-          />
+              votes={state.audienceVotes || {}}
+              voters={state.audienceVoters || []}
+              participants={effectiveActiveParticipants}
+              onUpdateConfig={handleUpdateAudienceVotingConfig}
+              onResetVotes={handleResetAudienceVoting}
+              isResultAnnouncementActive={!!state.resultAnnouncement?.isActive}
+              onToggleResultAnnouncement={handleToggleResultAnnouncement}
+              isScoringModeEnabled={state.isScoringModeEnabled ?? false}
+              isImpressionModeEnabled={state.isImpressionModeEnabled ?? false}
+              onRequestOpenConfirm={(title, message, onConfirm) =>
+                setConfirmModal({
+                  isOpen: true,
+                  title,
+                  message,
+                  onConfirm,
+                })
+              }
+              showToast={showToast}
+            />
+          )}
 
-          {/* 4. 「コントロールパネル」（得点・回答中・回答ログ・加点モード設定） */}
+          {/* 4. 「コントロールパネル」（得点・回答中・回答ログ・加点モード設定・手動投票カウンター） */}
           <ScoreBoard
-            participants={activeParticipants}
+            participants={effectiveActiveParticipants}
             scoreButtons={state.scoreButtons}
             onUpdateScoreButtons={handleUpdateScoreButtons}
             onUpdateParticipantScore={handleUpdateParticipantScore}
@@ -2604,13 +2725,33 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
                   prev.activeAnsweringParticipantId === id ? null : id,
               }))
             }
-            isScoringModeEnabled={state.isScoringModeEnabled ?? true}
-            onToggleScoringMode={(enabled) =>
+            isScoringModeEnabled={state.isScoringModeEnabled ?? false}
+            onToggleScoringMode={handleToggleScoringMode}
+            isImpressionModeEnabled={state.isImpressionModeEnabled ?? false}
+            onToggleImpressionMode={handleToggleImpressionMode}
+            isVotingFeatureEnabled={state.isVotingFeatureEnabled !== false}
+            onToggleVotingFeature={(enabled) =>
+              updateState((prev) => ({ ...prev, isVotingFeatureEnabled: enabled }))
+            }
+            isGayaModeEnabled={state.isGayaModeEnabled ?? false}
+            onToggleGayaMode={(enabled) => {
+              updateState((prev) => ({ ...prev, isGayaModeEnabled: enabled }));
+              if (enabled) {
+                showToast('ガヤモードをONにしました（モニターにQRコードを表示中）');
+              } else {
+                showToast('ガヤモードをOFFにしました');
+              }
+            }}
+            onUpdateAudienceVote={(participantId, count) => {
               updateState((prev) => ({
                 ...prev,
-                isScoringModeEnabled: enabled,
-              }))
-            }
+                audienceVotes: {
+                  ...(prev.audienceVotes || {}),
+                  [participantId]: count,
+                },
+              }));
+            }}
+            showToast={showToast}
             answerLogs={state.answerLogs || []}
             onUpdateAnswerLogs={(logs) =>
               updateState((prev) => ({ ...prev, answerLogs: logs }))
@@ -2631,9 +2772,6 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
           className={`rounded-xl border-2 p-4 sm:p-6 shadow-md space-y-5 transition-colors ${theme.sectionBgClass}`}
         >
           <div className={`border-b-2 pb-2 ${theme.borderClass}`}>
-            <span className="text-xs bg-amber-300 text-neutral-950 px-2 py-0.5 rounded border border-neutral-900 font-black">
-              各種構成・事前設定
-            </span>
             <h2 className="text-lg sm:text-xl font-black mt-1">
               【各種設定コントロール】
             </h2>
@@ -2667,9 +2805,6 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
           className={`rounded-xl border-2 p-4 sm:p-6 shadow-md space-y-4 transition-colors ${theme.sectionBgClass}`}
         >
           <div className={`border-b-2 pb-2 ${theme.borderClass}`}>
-            <span className="text-xs bg-red-100 dark:bg-red-950 text-red-900 dark:text-red-200 border border-red-500 px-2 py-0.5 rounded font-black">
-              システム設定
-            </span>
             <h2 className={`text-base sm:text-lg font-black mt-1 flex items-center gap-2 ${theme.textColorClass}`}>
               <RotateCcw className="w-4 h-4 text-red-600 dark:text-red-400" />
               <span>設定のリセット</span>
@@ -2717,7 +2852,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
                 お題の登録・参加者設定・カラーパレットはこちら
               </h3>
               <p className={`text-xs mt-0.5 ${theme.subTextClass}`}>
-                「テキスト（お題）」「参加者（名前・チーム名・アイコン）」「カラーパレット」の設定は、右にスライドした「サブコンソール１：準備」に配置されています。
+                「テキスト（お題）」「参加者（名前・チーム名・アイコン）」「カラーパレット」の設定は、右にスライドした「サブ１ 準備」に配置されています。
               </p>
             </div>
             <button
@@ -2725,7 +2860,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
               onClick={() => setCurrentPage('sub1_prep')}
               className="w-full sm:w-auto flex-shrink-0 inline-flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-700 text-white px-4 py-2.5 rounded-xl font-black text-xs sm:text-sm border-2 border-sky-800 shadow cursor-pointer transition"
             >
-              <span>サブコンソール１：準備 へ進む</span>
+              <span>サブ１ 準備 へ進む</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -2738,18 +2873,16 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
       <div className="w-1/5 px-2 sm:px-3 flex-shrink-0 space-y-6">
         {/* Subconsole 1 Top Header Card */}
         <div
-          className={`rounded-xl border-2 p-4 sm:p-5 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
+          className={`rounded-xl border-2 p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
             theme.isDark
               ? 'bg-sky-950/40 border-sky-800'
               : 'bg-sky-50 border-sky-300'
           }`}
         >
           <div>
-            <span className="text-xs bg-sky-500 text-white px-2 py-0.5 rounded font-black">
-              サブコンソール１
-            </span>
-            <h2 className={`text-lg sm:text-xl font-black mt-1 ${theme.textColorClass}`}>
-              【準備】テキスト・参加者・カラーパレット設定
+            <h2 className={`text-base sm:text-lg font-black flex items-center gap-2 ${theme.textColorClass}`}>
+              <Settings2 className="w-5 h-5 text-sky-500" />
+              <span>【準備】テキスト・参加者・カラーパレット設定</span>
             </h2>
             <p className={`text-xs font-bold mt-0.5 ${theme.subTextClass}`}>
               事前にお題の作成（画像含む）、参加者の入力（アイコン・チーム名）、背景カラーパレットを構成します。
@@ -2758,7 +2891,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
           <button
             type="button"
             onClick={() => setCurrentPage('main')}
-            className="inline-flex items-center gap-1.5 bg-neutral-950 hover:bg-neutral-800 text-amber-300 px-4 py-2 rounded-xl font-black text-xs border-2 border-neutral-950 shadow cursor-pointer transition"
+            className="inline-flex items-center gap-1.5 bg-neutral-950 hover:bg-neutral-800 text-amber-300 px-3.5 py-1.5 rounded-lg font-black text-xs border-2 border-neutral-950 shadow-xs cursor-pointer transition"
           >
             <ChevronLeft className="w-4 h-4" />
             <span>← メインコンソール（本番操作）に戻る</span>
@@ -2769,13 +2902,13 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
         {/* SECTION: テキスト (お題一覧 1〜10+) & 写真で一言 & 使用済みチェック */}
         {/* ======================================================== */}
         <section
-          className={`rounded-xl border-2 p-4 sm:p-6 shadow-md space-y-4 transition-colors ${theme.sectionBgClass}`}
+          className={`rounded-xl border-2 p-3 sm:p-4 shadow-sm space-y-3 transition-colors ${theme.sectionBgClass}`}
         >
           <div
-            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-2 pb-2 ${theme.borderClass}`}
+            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b-2 pb-2 ${theme.borderClass}`}
           >
             <div>
-              <h2 className={`text-lg sm:text-xl font-black ${theme.textColorClass}`}>
+              <h2 className={`text-base sm:text-lg font-black ${theme.textColorClass}`}>
                 テキスト（お題）
               </h2>
               <p className={`text-xs font-bold flex items-center gap-1 mt-0.5 ${theme.subTextClass}`}>
@@ -2785,7 +2918,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
             </div>
 
             {/* Download & Upload buttons */}
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               <input
                 type="file"
                 ref={topicFileInputRef}
@@ -2796,7 +2929,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
               <button
                 type="button"
                 onClick={() => topicFileInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 bg-white hover:bg-neutral-100 text-neutral-950 px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-xs font-black text-xs cursor-pointer transition"
+                className="inline-flex items-center gap-1.5 bg-white hover:bg-neutral-100 text-neutral-950 px-2.5 py-1.5 rounded-lg border-2 border-neutral-950 shadow-xs font-black text-xs cursor-pointer transition"
                 title="テキストファイル（.txt）からお題（画像データ含む）を読み込む"
               >
                 <Upload className="w-3.5 h-3.5" />
@@ -2806,7 +2939,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
               <button
                 type="button"
                 onClick={handleDownloadTopics}
-                className="inline-flex items-center gap-1.5 bg-amber-200 hover:bg-amber-300 text-neutral-950 px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-xs font-black text-xs cursor-pointer transition"
+                className="inline-flex items-center gap-1.5 bg-amber-200 hover:bg-amber-300 text-neutral-950 px-2.5 py-1.5 rounded-lg border-2 border-neutral-950 shadow-xs font-black text-xs cursor-pointer transition"
                 title="入力されているお題（画像データ含む）をtxtファイルで保存する"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -2815,16 +2948,15 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
             </div>
           </div>
 
-          {/* 表示するお題のフォント選択 & ボールド設定（テキスト（お題）の最上部と1番目のお題の間） */}
-          <div className="bg-[#FFFDE7] border-2 border-neutral-950 rounded-xl p-3.5 sm:p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 flex-wrap">
-              <span className="text-xs font-black text-neutral-950 bg-amber-300 px-2.5 py-1 rounded border border-neutral-900 shadow-xs flex-shrink-0 flex items-center gap-1.5">
-                <span>🔤</span>
-                <span>お題のフォント選択:</span>
+          {/* 表示するお題のフォント選択 & ボールド設定 & 縁取り文字設定 */}
+          <div className="bg-[#FFFDE7] border-2 border-neutral-950 rounded-xl p-2.5 sm:p-3 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-2.5 flex-wrap">
+              <span className="text-xs sm:text-sm font-black text-neutral-950 flex-shrink-0">
+                お題のフォント選択:
               </span>
 
               {/* 5 Font Options */}
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {TOPIC_FONT_OPTIONS.map((f) => {
                   const isSelected = (state.topicFontFamily || 'gothic') === f.id;
                   return (
@@ -2838,16 +2970,16 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
                         }))
                       }
                       style={{ fontFamily: f.fontFamily }}
-                      className={`px-3 py-1.5 rounded-lg border-2 text-xs sm:text-sm transition-all cursor-pointer flex items-center gap-1.5 ${
+                      className={`px-2.5 py-1 rounded-lg border-2 text-xs transition-all cursor-pointer flex items-center gap-1 ${
                         isSelected
-                          ? 'bg-neutral-950 text-amber-300 border-neutral-950 shadow-md ring-2 ring-amber-400 scale-102 font-black'
+                          ? 'bg-neutral-950 text-amber-300 border-neutral-950 shadow-xs ring-2 ring-amber-400 scale-102 font-black'
                           : 'bg-white text-neutral-900 border-neutral-800 hover:bg-neutral-100 font-bold'
                       }`}
                       title={`${f.label}（${f.category}）をお題のフォントとして選択`}
                     >
                       <span>{f.label}</span>
                       <span
-                        className={`text-[10px] px-1 py-0.5 rounded font-normal ${
+                        className={`text-[9px] px-1 py-0.2 rounded font-normal ${
                           isSelected
                             ? 'bg-neutral-800 text-neutral-300'
                             : 'bg-neutral-200 text-neutral-700'
@@ -2861,24 +2993,45 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
               </div>
             </div>
 
-            {/* ボールド ON / OFF スイッチ */}
-            <div className="flex items-center gap-2.5 bg-white px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-xs flex-shrink-0 self-start md:self-auto">
-              <span className="text-xs sm:text-sm font-black text-neutral-900">
-                太字 (ボールド):
-              </span>
-              <Switch
-                size="sm"
-                checked={state.isTopicBold ?? true}
-                onChange={(checked) =>
-                  updateState((prev) => ({
-                    ...prev,
-                    isTopicBold: checked,
-                  }))
-                }
-                onLabel="ON"
-                offLabel="OFF"
-                ariaLabel="お題フォントのボールド設定"
-              />
+            {/* ボールド ON / OFF スイッチ & 縁取り文字 ON / OFF スイッチ */}
+            <div className="flex flex-wrap items-center gap-2 flex-shrink-0 self-start md:self-auto">
+              <div className="flex items-center gap-2 bg-white px-2.5 py-1 rounded-lg border-2 border-neutral-950 shadow-2xs">
+                <span className="text-xs font-black text-neutral-900 whitespace-nowrap">
+                  太字 (ボールド):
+                </span>
+                <Switch
+                  size="sm"
+                  checked={state.isTopicBold ?? true}
+                  onChange={(checked) =>
+                    updateState((prev) => ({
+                      ...prev,
+                      isTopicBold: checked,
+                    }))
+                  }
+                  onLabel="ON"
+                  offLabel="OFF"
+                  ariaLabel="お題フォントのボールド設定"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 bg-white px-2.5 py-1 rounded-lg border-2 border-neutral-950 shadow-2xs">
+                <span className="text-xs font-black text-neutral-900 whitespace-nowrap">
+                  縁取り文字:
+                </span>
+                <Switch
+                  size="sm"
+                  checked={!!state.isTopicOutline}
+                  onChange={(checked) =>
+                    updateState((prev) => ({
+                      ...prev,
+                      isTopicOutline: checked,
+                    }))
+                  }
+                  onLabel="ON"
+                  offLabel="OFF"
+                  ariaLabel="お題フォントの縁取り文字設定"
+                />
+              </div>
             </div>
           </div>
 
@@ -3308,18 +3461,27 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
                     <span className="hidden xs:inline">画像</span>
                   </button>
 
-                  {/* Team Name Input */}
-                  <input
-                    type="text"
-                    aria-label={`参加者 ${index + 1} のチーム名`}
-                    value={p.teamName || ''}
-                    onChange={(e) =>
-                      handleParticipantTeamNameChange(p.id, e.target.value)
-                    }
-                    placeholder="チーム名"
-                    className="w-18 sm:w-24 px-2 py-1.5 text-xs font-bold text-neutral-950 bg-white border-2 border-neutral-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-950 shadow-xs flex-shrink-0"
-                    title="チーム名（任意入力・今後使用）"
-                  />
+                  {/* Team Name Dropdown (Shown only when isTeamModeEnabled is ON) */}
+                  {state.isTeamModeEnabled && (
+                    <select
+                      aria-label={`参加者 ${index + 1} のチーム名`}
+                      value={p.teamName || ''}
+                      onChange={(e) =>
+                        handleParticipantTeamNameChange(p.id, e.target.value)
+                      }
+                      className="w-24 sm:w-28 px-2 py-1.5 text-xs font-black text-neutral-950 bg-white border-2 border-neutral-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-950 shadow-xs flex-shrink-0 cursor-pointer"
+                      title="チーム名を選択"
+                    >
+                      <option value="">なし</option>
+                      {(state.teams || [])
+                        .filter((team) => team.name.trim() !== '')
+                        .map((team) => (
+                          <option key={team.id} value={team.name}>
+                            {team.name}
+                          </option>
+                        ))}
+                    </select>
+                  )}
 
                   {/* Remove image button if present */}
                   {p.avatarUrl && (
@@ -3338,7 +3500,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
             })}
           </div>
 
-          {/* Add / Remove buttons for participants */}
+          {/* Add / Remove buttons for participants & Team battle switch */}
           <div className="pt-3 border-t border-neutral-300 flex flex-wrap items-center gap-3">
             <button
               type="button"
@@ -3358,6 +3520,27 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
               <Minus className="w-4 h-4" />
               <span>参加者の項目を減らす</span>
             </button>
+
+            {/* Switch: タッグ・チーム戦を行う */}
+            <div className="bg-white px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-xs flex items-center">
+              <Switch
+                checked={!!state.isTeamModeEnabled}
+                onChange={(checked) => {
+                  updateState((prev) => ({
+                    ...prev,
+                    isTeamModeEnabled: checked,
+                  }));
+                  showToast(
+                    checked
+                      ? 'タッグ・チーム戦をONにしました（チーム設定欄が展開されました）'
+                      : 'タッグ・チーム戦をOFFにしました'
+                  );
+                }}
+                onLabel="ON"
+                offLabel="OFF"
+                label="タッグ・チーム戦を行う:"
+              />
+            </div>
           </div>
         </section>
 
@@ -3499,6 +3682,224 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
         </section>
 
         {/* ======================================================== */}
+        {/* SECTION: タッグ・チーム名 (1〜4のテキストボックス・所属メンバー表示・DnD入替) */}
+        {/* ======================================================== */}
+        {(() => {
+          const currentTeams = state.teams && state.teams.length > 0 ? state.teams : [
+            { id: 1, name: 'チーム A' },
+            { id: 2, name: 'チーム B' },
+          ];
+          const isTeamExpanded = manualTeamExpanded !== null ? manualTeamExpanded : !!state.isTeamModeEnabled;
+
+          return (
+            <section
+              className={`rounded-xl border-2 p-4 sm:p-6 shadow-md space-y-4 transition-colors ${theme.sectionBgClass}`}
+            >
+              {/* Header (Accordion toggle) */}
+              <div
+                onClick={() => setManualTeamExpanded(!isTeamExpanded)}
+                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none ${
+                  isTeamExpanded ? `border-b-2 pb-2 ${theme.borderClass}` : ''
+                }`}
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className={`text-lg sm:text-xl font-black ${theme.textColorClass}`}>
+                      タッグ・チーム名
+                    </h2>
+                    <span className="text-xs bg-amber-300 text-neutral-950 font-black px-2 py-0.5 rounded border border-neutral-950">
+                      全 {currentTeams.length} / 4 チーム
+                    </span>
+                    <span className="text-xs text-neutral-500 font-bold ml-1">
+                      {isTeamExpanded ? '（クリックで閉じる）' : '（タッグ・チーム戦ONまたはクリックで展開）'}
+                    </span>
+                  </div>
+                  {isTeamExpanded && (
+                    <p className={`text-xs font-bold mt-0.5 ${theme.subTextClass}`}>
+                      チーム名を設定できます（最大4チーム）。各チームの枠内には現在参加者欄で割り当てられている回答者が表示されます。
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {state.isTeamModeEnabled ? (
+                    <span className="px-2.5 py-0.5 text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-400 rounded-full">
+                      チーム戦 有効
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 text-xs font-bold bg-neutral-100 text-neutral-600 border border-neutral-300 rounded-full">
+                      チーム戦 OFF
+                    </span>
+                  )}
+                  <div
+                    className="p-1.5 rounded-lg border border-neutral-300 bg-neutral-50 hover:bg-neutral-200 text-neutral-700 transition"
+                    title={isTeamExpanded ? '折りたたむ' : '展開する'}
+                  >
+                    {isTeamExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </div>
+                </div>
+              </div>
+
+              {/* Collapsible Content */}
+              {isTeamExpanded && (
+                <div className="space-y-4">
+                  {/* Grid of team cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {currentTeams.map((team, index) => {
+                      const isDragging = draggedTeamIndex === index;
+                      const isOver = dragOverTeamIndex === index;
+                      const assignedMembers = state.participants.filter(
+                        (p) => p.teamName?.trim() === team.name.trim() && team.name.trim() !== ''
+                      );
+
+                      return (
+                        <div
+                          key={team.id}
+                          onDragOver={(e) => handleTeamDragOver(e, index)}
+                          onDrop={(e) => handleTeamDrop(e, index)}
+                          className={`p-3 rounded-xl border-2 flex flex-col justify-between gap-2 shadow-xs transition-all ${
+                            isDragging
+                              ? 'opacity-40 scale-[0.99] border-amber-600 bg-amber-100'
+                              : isOver
+                              ? 'border-blue-600 ring-2 ring-blue-400 bg-blue-50'
+                              : 'bg-[#FFFDE7] border-neutral-950'
+                          }`}
+                        >
+                          {/* Top Row: Reorder Handle, Number, Name Input, Delete */}
+                          <div className="flex items-center gap-2 sm:gap-2.5">
+                            {/* Drag Handle & Up/Down Arrows */}
+                            <div className="flex items-center gap-0.5 flex-shrink-0">
+                              <div
+                                draggable
+                                onDragStart={(e) => handleTeamDragStart(e, index)}
+                                onDragEnd={handleTeamDragEnd}
+                                className="p-1 text-neutral-400 hover:text-neutral-950 cursor-grab active:cursor-grabbing rounded hover:bg-amber-200 transition"
+                                title="ドラッグしてチームの並び順を変更"
+                              >
+                                <GripVertical className="w-3.5 h-3.5" />
+                              </div>
+
+                              <div className="flex flex-col gap-0.5">
+                                <button
+                                  type="button"
+                                  aria-label={`チーム ${index + 1} を1つ上へ移動`}
+                                  disabled={index === 0}
+                                  onClick={() => {
+                                    if (index > 0) reorderTeamItems(index, index - 1);
+                                  }}
+                                  className="w-4 h-3 bg-white hover:bg-amber-200 disabled:opacity-20 text-neutral-800 border border-neutral-300 rounded flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
+                                  title="1つ上へ移動"
+                                >
+                                  <ChevronUp className="w-2.5 h-2.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={`チーム ${index + 1} を1つ下へ移動`}
+                                  disabled={index === currentTeams.length - 1}
+                                  onClick={() => {
+                                    if (index < currentTeams.length - 1) reorderTeamItems(index, index + 1);
+                                  }}
+                                  className="w-4 h-3 bg-white hover:bg-amber-200 disabled:opacity-20 text-neutral-800 border border-neutral-300 rounded flex items-center justify-center cursor-pointer disabled:cursor-not-allowed"
+                                  title="1つ下へ移動"
+                                >
+                                  <ChevronDown className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Number Badge */}
+                            <span className="w-7 h-7 sm:w-8 sm:h-8 rounded bg-amber-200 border border-neutral-900 flex items-center justify-center font-black text-xs sm:text-sm text-neutral-950 flex-shrink-0">
+                              {index + 1}
+                            </span>
+
+                            {/* Team Name Input */}
+                            <input
+                              type="text"
+                              aria-label={`チーム ${index + 1}`}
+                              value={team.name}
+                              onChange={(e) => handleTeamChange(team.id, e.target.value)}
+                              placeholder={`チーム ${index + 1} の名前を入力...`}
+                              className="flex-1 min-w-0 px-3 py-1.5 text-xs sm:text-sm font-black text-neutral-950 bg-white border-2 border-neutral-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-950"
+                            />
+
+                            {/* Clear Button */}
+                            <button
+                              type="button"
+                              aria-label={`チーム ${index + 1} をクリア`}
+                              onClick={() => handleClearTeam(team.id)}
+                              disabled={!team.name}
+                              className="p-1.5 text-neutral-400 hover:text-red-700 disabled:opacity-30 disabled:hover:text-neutral-400 hover:bg-red-50 rounded cursor-pointer disabled:cursor-not-allowed transition flex-shrink-0"
+                              title="このチーム名をクリア"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {/* Member List inside the team box */}
+                          <div className="pt-2 border-t border-neutral-300/80">
+                            {assignedMembers.length > 0 ? (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[10px] font-black text-neutral-600">
+                                  所属メンバー ({assignedMembers.length}名):
+                                </span>
+                                {assignedMembers.map((m) => (
+                                  <span
+                                    key={m.id}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-neutral-900 text-xs font-bold text-neutral-950 shadow-2xs"
+                                  >
+                                    {m.avatarUrl ? (
+                                      <img
+                                        src={m.avatarUrl}
+                                        alt=""
+                                        className="w-4 h-4 rounded-full object-cover"
+                                      />
+                                    ) : (
+                                      <User className="w-3 h-3 text-neutral-500" />
+                                    )}
+                                    <span>{m.name || `回答者 ${m.id}`}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-neutral-400 font-bold">
+                                ※ 所属メンバーなし（参加者欄でこのチームを選択すると表示されます）
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Add / Remove buttons for teams (1 to 4) */}
+                  <div className="pt-3 border-t border-neutral-300 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleAddTeam}
+                      disabled={currentTeams.length >= 4}
+                      className="inline-flex items-center gap-1.5 bg-neutral-950 hover:bg-neutral-800 disabled:opacity-40 text-[#FEF9C3] px-3.5 py-2 rounded-lg border-2 border-neutral-950 shadow hover:shadow-md cursor-pointer disabled:cursor-not-allowed font-black text-xs sm:text-sm transition"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>項目を追加する</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleRemoveTeam}
+                      disabled={currentTeams.length <= 1}
+                      className="inline-flex items-center gap-1.5 bg-white hover:bg-red-50 text-red-700 hover:text-red-800 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-red-700 px-3.5 py-2 rounded-lg border-2 border-neutral-950 shadow cursor-pointer disabled:cursor-not-allowed font-black text-xs sm:text-sm transition"
+                    >
+                      <Minus className="w-4 h-4" />
+                      <span>項目を減らす</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          );
+        })()}
+
+        {/* ======================================================== */}
         {/* 【カラーパレット】 (背景色選択・ダークモード対応) */}
         {/* ======================================================== */}
         <ColorPaletteSelector
@@ -3507,6 +3908,60 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
             updateState((prev) => ({ ...prev, colorPalette: palette }))
           }
           isDark={theme.isDark}
+          customBgUrl={state.customBgUrl}
+          bgScale={state.bgScale ?? 100}
+          bgOpacity={state.bgOpacity ?? 100}
+          bgBrightness={state.bgBrightness ?? 100}
+          onUploadBgImage={(url) => {
+            updateState((prev) => ({ ...prev, customBgUrl: url }));
+            showToast('背景画像を設定しました');
+          }}
+          onRemoveBgImage={() => {
+            updateState((prev) => ({ ...prev, customBgUrl: undefined }));
+            showToast('背景画像を解除しました');
+          }}
+          onChangeBgScale={(scale) => updateState((prev) => ({ ...prev, bgScale: scale }))}
+          onChangeBgOpacity={(opacity) => updateState((prev) => ({ ...prev, bgOpacity: opacity }))}
+          onChangeBgBrightness={(brightness) => updateState((prev) => ({ ...prev, bgBrightness: brightness }))}
+          bgPattern={state.bgPattern || 'none'}
+          onChangeBgPattern={(pattern) => {
+            updateState((prev) => ({ ...prev, bgPattern: pattern }));
+            showToast(
+              pattern === 'grid'
+                ? '背景の模様を「格子」に設定しました'
+                : pattern === 'dots'
+                ? '背景の模様を「ドット」に設定しました'
+                : '背景の模様を「模様なし」に設定しました'
+            );
+          }}
+          bgPatternScale={state.bgPatternScale ?? 100}
+          onChangeBgPatternScale={(scale) =>
+            updateState((prev) => ({ ...prev, bgPatternScale: scale }))
+          }
+          bgPatternSpeed={state.bgPatternSpeed ?? 100}
+          onChangeBgPatternSpeed={(speed) =>
+            updateState((prev) => ({ ...prev, bgPatternSpeed: speed }))
+          }
+          bgPatternOpacity={state.bgPatternOpacity ?? 60}
+          onChangeBgPatternOpacity={(opacity) =>
+            updateState((prev) => ({ ...prev, bgPatternOpacity: opacity }))
+          }
+          bgPatternCount={state.bgPatternCount ?? 100}
+          onChangeBgPatternCount={(count) =>
+            updateState((prev) => ({ ...prev, bgPatternCount: count }))
+          }
+          topicFontFamily={state.topicFontFamily || 'gothic'}
+          onChangeTopicFontFamily={(fontId) =>
+            updateState((prev) => ({ ...prev, topicFontFamily: fontId }))
+          }
+          isTopicBold={state.isTopicBold ?? true}
+          onChangeTopicBold={(bold) =>
+            updateState((prev) => ({ ...prev, isTopicBold: bold }))
+          }
+          isTopicOutline={!!state.isTopicOutline}
+          onChangeTopicOutline={(outline) =>
+            updateState((prev) => ({ ...prev, isTopicOutline: outline }))
+          }
         />
 
         {/* Subconsole 1 Bottom Navigation */}
@@ -3524,7 +3979,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
             onClick={() => setCurrentPage('sub2_preset')}
             className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-black text-sm cursor-pointer shadow-lg border-2 border-purple-900 transition hover:scale-102"
           >
-            <span>サブコンソール２：プリセット へ進む</span>
+            <span>サブ２ プリセット へ進む</span>
             <ChevronRight className="w-5 h-5" />
           </button>
         </div>
@@ -3533,21 +3988,19 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
       {/* ======================================================== */}
       {/* ページ3: サブコンソール２：プリセット */}
       {/* ======================================================== */}
-      <div className="w-1/5 pl-3 sm:pl-4 flex-shrink-0 space-y-6">
+      <div className="w-1/5 pl-2 sm:pl-3 flex-shrink-0 space-y-3.5 sm:space-y-4">
         {/* Subconsole 2 Top Header Card */}
         <div
-          className={`rounded-xl border-2 p-4 sm:p-5 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
+          className={`rounded-xl border-2 p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
             theme.isDark
               ? 'bg-purple-950/40 border-purple-800'
               : 'bg-purple-50 border-purple-300'
           }`}
         >
           <div>
-            <span className="text-xs bg-purple-600 text-white px-2 py-0.5 rounded font-black">
-              サブコンソール２
-            </span>
-            <h2 className={`text-lg sm:text-xl font-black mt-1 ${theme.textColorClass}`}>
-              【プリセット】お題・参加者・タイマー等の事前登録
+            <h2 className={`text-base sm:text-lg font-black flex items-center gap-2 ${theme.textColorClass}`}>
+              <Layers className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              <span>【プリセット】お題・参加者・タイマー等の事前登録</span>
             </h2>
             <p className={`text-xs font-bold mt-0.5 ${theme.subTextClass}`}>
               試合・コーナーごとの設定をあらかじめ保存し、メインコンソールから瞬時に呼び出せます。
@@ -3558,7 +4011,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
             <button
               type="button"
               onClick={() => setCurrentPage('main')}
-              className="inline-flex items-center gap-1.5 bg-neutral-950 hover:bg-neutral-800 text-amber-300 px-4 py-2 rounded-xl font-black text-xs border-2 border-neutral-950 shadow cursor-pointer transition"
+              className="inline-flex items-center gap-1.5 bg-neutral-950 hover:bg-neutral-800 text-amber-300 px-3.5 py-1.5 rounded-lg font-black text-xs border-2 border-neutral-950 shadow-xs cursor-pointer transition"
             >
               <ChevronLeft className="w-4 h-4" />
               <span>メインコンソールへ戻る</span>
@@ -3567,7 +4020,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
         </div>
 
         {/* Preset Cards List */}
-        <div className="space-y-5">
+        <div className="space-y-3 sm:space-y-3.5">
           {(!state.presets || state.presets.length === 0) ? (
             <div className="p-8 text-center bg-white dark:bg-neutral-900 rounded-xl border-2 border-dashed border-neutral-300 dark:border-neutral-700 space-y-3">
               <p className="text-sm font-bold text-neutral-500">プリセットが登録されていません</p>
@@ -4109,7 +4562,7 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
             className="inline-flex items-center gap-2 bg-sky-700 hover:bg-sky-800 text-white px-5 py-3 rounded-xl font-black text-sm cursor-pointer shadow-lg border-2 border-sky-900 transition hover:scale-102"
           >
             <ChevronLeft className="w-5 h-5" />
-            <span>サブコンソール１：準備 に戻る</span>
+            <span>サブ１ 準備 に戻る</span>
           </button>
           <button
             type="button"

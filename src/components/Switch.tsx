@@ -9,6 +9,7 @@ interface SwitchProps {
   label?: string;
   size?: 'sm' | 'md' | 'lg';
   ariaLabel?: string;
+  disabled?: boolean;
 }
 
 export const Switch: React.FC<SwitchProps> = ({
@@ -20,6 +21,7 @@ export const Switch: React.FC<SwitchProps> = ({
   label,
   size = 'md',
   ariaLabel,
+  disabled = false,
 }) => {
   const switchId = id || `switch-${Math.random().toString(36).substring(2, 7)}`;
 
@@ -49,10 +51,13 @@ export const Switch: React.FC<SwitchProps> = ({
         type="button"
         id={switchId}
         role="switch"
+        disabled={disabled}
         aria-checked={checked}
         aria-label={ariaLabel || label || (checked ? onLabel : offLabel)}
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:ring-offset-2 cursor-pointer border-2 border-neutral-950 ${trackWidth} ${
+        onClick={() => !disabled && onChange(!checked)}
+        className={`relative inline-flex items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:ring-offset-2 border-2 border-neutral-950 ${trackWidth} ${
+          disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+        } ${
           checked ? 'bg-emerald-600' : 'bg-neutral-300'
         }`}
       >
@@ -62,8 +67,10 @@ export const Switch: React.FC<SwitchProps> = ({
       </button>
 
       <span
-        onClick={() => onChange(!checked)}
-        className={`font-bold select-none cursor-pointer text-xs md:text-sm px-2 py-0.5 rounded border border-neutral-900/30 ${
+        onClick={() => !disabled && onChange(!checked)}
+        className={`font-bold select-none text-xs md:text-sm px-2 py-0.5 rounded border border-neutral-900/30 ${
+          disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+        } ${
           checked
             ? 'bg-emerald-100 text-emerald-950 border-emerald-600 font-extrabold'
             : 'bg-neutral-200 text-neutral-700'

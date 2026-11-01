@@ -170,10 +170,10 @@ export const TimerControl: React.FC<TimerControlProps> = ({
   // Real-time Display Only Mode (Used in 【最上段】リアルタイムコントロール)
   if (mode === 'display_only') {
     return (
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 rounded-xl border-2 border-neutral-950 shadow-sm">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-neutral-950" />
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white p-3 sm:p-3.5 rounded-xl border-2 border-neutral-950 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1.5">
+            <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-neutral-950" />
             <span className="text-xs sm:text-sm font-black text-neutral-800">
               現在モニター表示中の時間:
             </span>

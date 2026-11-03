@@ -396,10 +396,16 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
             {/* Switch: 印象モード (ON/OFF) - デフォルトOFF ＆ 直下に「投票機能」スイッチ */}
             {onToggleImpressionMode && (
               <div className="flex flex-col gap-1.5">
-                <div className="bg-white px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-sm flex items-center">
+                <div
+                  className={`bg-white px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-sm flex items-center ${
+                    isGayaModeEnabled ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  title={isGayaModeEnabled ? 'ガヤモードがONの時は印象モードをONにできません' : '観覧者投票・挙手集計モード'}
+                >
                   <Switch
                     checked={!!isImpressionModeEnabled}
                     onChange={onToggleImpressionMode}
+                    disabled={!!isGayaModeEnabled}
                     onLabel="ON"
                     offLabel="OFF"
                     label="印象モード:"
@@ -422,12 +428,18 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
               </div>
             )}
 
-            {/* Switch: 加点モード (ON/OFF) - デフォルトON */}
+            {/* Switch: 加点モード (ON/OFF) - デフォルトOFF */}
             {onToggleScoringMode && (
-              <div className="bg-white px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-sm flex items-center">
+              <div
+                className={`bg-white px-3 py-1.5 rounded-lg border-2 border-neutral-950 shadow-sm flex items-center ${
+                  isGayaModeEnabled ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+                title={isGayaModeEnabled ? 'ガヤモードがONの時は加点モードをONにできません' : 'ポイント加減算モード'}
+              >
                 <Switch
                   checked={isScoringModeEnabled !== false}
                   onChange={onToggleScoringMode}
+                  disabled={!!isGayaModeEnabled}
                   onLabel="ON"
                   offLabel="OFF"
                   label="加点モード:"

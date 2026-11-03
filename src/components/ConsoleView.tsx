@@ -471,8 +471,12 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
     showToast('全員の得点を0点にリセットしました');
   };
 
-  // Toggle 印象モード (Impression Mode) with mutual exclusion against 加点モード
+  // Toggle 印象モード (Impression Mode) with mutual exclusion against 加点モード・ガヤモード
   const handleToggleImpressionMode = (targetOn: boolean) => {
+    if (targetOn && state.isGayaModeEnabled) {
+      showToast('ガヤモードがONの時は印象モードをONにできません');
+      return;
+    }
     if (targetOn && state.isScoringModeEnabled) {
       setConfirmModal({
         isOpen: true,
@@ -497,8 +501,12 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
     showToast(targetOn ? '印象モードをONにしました' : '印象モードをOFFにしました');
   };
 
-  // Toggle 加点モード (Scoring Mode) with mutual exclusion against 印象モード
+  // Toggle 加点モード (Scoring Mode) with mutual exclusion against 印象モード・ガヤモード
   const handleToggleScoringMode = (targetOn: boolean) => {
+    if (targetOn && state.isGayaModeEnabled) {
+      showToast('ガヤモードがONの時は加点モードをONにできません');
+      return;
+    }
     if (targetOn && state.isImpressionModeEnabled) {
       setConfirmModal({
         isOpen: true,
@@ -2735,6 +2743,10 @@ export const ConsoleView: React.FC<ConsoleViewProps> = ({
             }
             isGayaModeEnabled={state.isGayaModeEnabled ?? false}
             onToggleGayaMode={(enabled) => {
+              if (enabled && (state.isImpressionModeEnabled || state.isScoringModeEnabled)) {
+                showToast('印象モードまたは加点モードがONの時はガヤモードをONにできません');
+                return;
+              }
               updateState((prev) => ({ ...prev, isGayaModeEnabled: enabled }));
               if (enabled) {
                 showToast('ガヤモードをONにしました（モニターにQRコードを表示中）');
